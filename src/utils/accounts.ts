@@ -11,6 +11,7 @@ const ROUND_SEED = Buffer.from('round');
 const MINER_SEED = Buffer.from('miner');
 const STAKE_SEED = Buffer.from('stake');
 const TREASURY_SEED = Buffer.from('treasury');
+const AUTOMATION_SEED = Buffer.from('automation');
 
 // Helper to deserialize u64 (8 bytes) as BN
 function deserializeU64(buffer: Buffer, offset: number): BN {
@@ -63,6 +64,14 @@ export function getStakePDA(authority: PublicKey): [PublicKey, number] {
 export function getTreasuryPDA(): [PublicKey, number] {
   return PublicKey.findProgramAddressSync(
     [TREASURY_SEED],
+    config.orbProgramId
+  );
+}
+
+// Get Automation PDA for a specific authority
+export function getAutomationPDA(authority: PublicKey): [PublicKey, number] {
+  return PublicKey.findProgramAddressSync(
+    [AUTOMATION_SEED, authority.toBuffer()],
     config.orbProgramId
   );
 }
@@ -255,6 +264,7 @@ export default {
   getMinerPDA,
   getStakePDA,
   getTreasuryPDA,
+  getAutomationPDA,
   fetchBoard,
   fetchRound,
   fetchMiner,

@@ -1,7 +1,6 @@
 import {
   SystemProgram,
   TransactionInstruction,
-  SYSVAR_RENT_PUBKEY,
   Transaction,
   LAMPORTS_PER_SOL,
 } from '@solana/web3.js';
@@ -10,17 +9,15 @@ import BN from 'bn.js';
 import { config } from './config';
 import { getWallet } from './wallet';
 import { getConnection } from './solana';
-import { getBoardPDA, getMinerPDA, getStakePDA } from './accounts';
+import { getBoardPDA, getRoundPDA, getMinerPDA, getStakePDA, getAutomationPDA, fetchBoard } from './accounts';
 import logger from './logger';
 import { retry } from './retry';
 
-// Instruction discriminators (8-byte identifiers for each instruction)
-// These need to match the actual ORE/ORB program discriminators
-// Typically these are the first 8 bytes of the sha256 hash of "global:instruction_name"
-const DEPLOY_DISCRIMINATOR = Buffer.from([0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]);
-const CLAIM_SOL_DISCRIMINATOR = Buffer.from([0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]);
-const CLAIM_ORE_DISCRIMINATOR = Buffer.from([0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]);
-const STAKE_DISCRIMINATOR = Buffer.from([0x04, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]);
+// Instruction discriminators (extracted from real ORB transactions)
+const DEPLOY_DISCRIMINATOR = Buffer.from([0x00, 0x40, 0x42, 0x0f, 0x00, 0x00, 0x00, 0x00]);
+const CLAIM_SOL_DISCRIMINATOR = Buffer.from([0x8b, 0x71, 0xb3, 0xbd, 0xbe, 0x1e, 0x84, 0xc3]);
+const CLAIM_ORE_DISCRIMINATOR = Buffer.from([0x84, 0xc7, 0x0b, 0xa0, 0xb1, 0x27, 0x38, 0x72]);
+const STAKE_DISCRIMINATOR = Buffer.from([0xce, 0xb0, 0xca, 0x12, 0xc8, 0xd1, 0xb3, 0x6c]);
 
 // Convert deployment strategy to 25-bit mask
 // For "all" strategy, all 25 bits are set (deploy to all squares)
@@ -43,31 +40,49 @@ export function getSquareMask(strategy: 'all' | 'specific', squares?: number[]):
   throw new Error('Invalid deployment strategy');
 }
 
-// Build Deploy instruction
-export function buildDeployInstruction(
+// Build Deploy instruction (based on ORE source code)
+export async function buildDeployInstruction(
   amount: number,
   squareMask: number
-): TransactionInstruction {
+): Promise<TransactionInstruction> {
   const wallet = getWallet();
   const [boardPDA] = getBoardPDA();
   const [minerPDA] = getMinerPDA(wallet.publicKey);
+  const [automationPDA] = getAutomationPDA(wallet.publicKey);
+
+  // Get current board to find round ID
+  const board = await fetchBoard();
+  const [roundPDA] = getRoundPDA(board.roundId);
 
   // Convert SOL amount to lamports
   const amountLamports = new BN(amount * LAMPORTS_PER_SOL);
 
-  // Build instruction data: discriminator + amount (8 bytes) + mask (4 bytes)
-  const data = Buffer.alloc(8 + 8 + 4);
+  // Build instruction data based on ORE Deploy struct:
+  // pub struct Deploy { amount: [u8; 8], squares: [u8; 4] }
+  // Total: 8 bytes discriminator + 8 bytes amount + 4 bytes squares = 20 bytes
+  const data = Buffer.alloc(20);
   DEPLOY_DISCRIMINATOR.copy(data, 0);
   amountLamports.toArrayLike(Buffer, 'le', 8).copy(data, 8);
-  data.writeUInt32LE(squareMask, 16);
+  data.writeUInt32LE(squareMask, 16); // 4-byte squares mask
 
-  // Account keys (order matters!)
+  logger.debug(`Deploy instruction: amount=${amount} SOL, mask=0x${squareMask.toString(16)}`);
+
+  // Account keys based on ORE deploy.rs:
+  // 1. signer - Transaction signer
+  // 2. authority - Writable authority (same as signer)
+  // 3. automation - Writable automation PDA [AUTOMATION, authority]
+  // 4. board - Writable board account
+  // 5. miner - Writable miner PDA [MINER, authority]
+  // 6. round - Writable round account
+  // 7. system_program - System program
   const keys = [
-    { pubkey: wallet.publicKey, isSigner: true, isWritable: true },
-    { pubkey: minerPDA, isSigner: false, isWritable: true },
-    { pubkey: boardPDA, isSigner: false, isWritable: true },
-    { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
-    { pubkey: SYSVAR_RENT_PUBKEY, isSigner: false, isWritable: false },
+    { pubkey: wallet.publicKey, isSigner: true, isWritable: true },  // signer
+    { pubkey: wallet.publicKey, isSigner: false, isWritable: true }, // authority (same as signer)
+    { pubkey: automationPDA, isSigner: false, isWritable: true },    // automation PDA
+    { pubkey: boardPDA, isSigner: false, isWritable: true },         // board
+    { pubkey: minerPDA, isSigner: false, isWritable: true },         // miner
+    { pubkey: roundPDA, isSigner: false, isWritable: true },         // round
+    { pubkey: SystemProgram.programId, isSigner: false, isWritable: false }, // system_program
   ];
 
   return new TransactionInstruction({
@@ -169,11 +184,24 @@ export async function sendAndConfirmTransaction(
       // Sign transaction
       transaction.sign(wallet);
 
-      // Send transaction
-      const signature = await connection.sendRawTransaction(transaction.serialize(), {
-        skipPreflight: false,
-        maxRetries: 3,
-      });
+      // Send transaction with detailed error logging
+      let signature: string;
+      try {
+        signature = await connection.sendRawTransaction(transaction.serialize(), {
+          skipPreflight: false,
+          maxRetries: 3,
+        });
+      } catch (error: any) {
+        // Log detailed error information
+        logger.error(`${context}: Transaction simulation failed`);
+        if (error.logs) {
+          logger.error(`${context}: Simulation logs:`, error.logs);
+        }
+        if (error.message) {
+          logger.error(`${context}: Error message:`, error.message);
+        }
+        throw error;
+      }
 
       logger.info(`${context}: Transaction sent: ${signature}`);
 

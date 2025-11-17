@@ -11,17 +11,26 @@ import { TransactionInstruction } from '@solana/web3.js';
 
 let isRunning = true;
 let lastRewardsCheck = 0;
+let signalHandlersRegistered = false;
 
-// Handle graceful shutdown
-process.on('SIGINT', () => {
-  logger.info('Received SIGINT, shutting down gracefully...');
-  isRunning = false;
-});
+// Setup graceful shutdown handlers (only once)
+function setupSignalHandlers() {
+  if (signalHandlersRegistered) return;
+  signalHandlersRegistered = true;
 
-process.on('SIGTERM', () => {
-  logger.info('Received SIGTERM, shutting down gracefully...');
-  isRunning = false;
-});
+  const shutdownHandler = () => {
+    if (isRunning) {
+      logger.info('\nShutdown signal received, stopping gracefully...');
+      isRunning = false;
+    } else {
+      logger.info('Force stopping...');
+      process.exit(0);
+    }
+  };
+
+  process.once('SIGINT', shutdownHandler);
+  process.once('SIGTERM', shutdownHandler);
+}
 
 async function checkAndClaimRewards(): Promise<void> {
   try {
@@ -138,10 +147,10 @@ async function deployToRound(): Promise<boolean> {
     const board = await fetchBoard();
     logger.info(`Current Round: ${board.roundId.toString()}`);
 
-    // Fetch round details
-    const round = await fetchRound(board.roundId);
-    const motherloadOrb = Number(round.motherload) / 1e9;
-    logger.info(`Motherload: ${motherloadOrb.toFixed(2)} ORB`);
+    // Fetch global motherload from Treasury
+    const treasury = await fetchTreasury();
+    const motherloadOrb = Number(treasury.motherlode) / 1e9;
+    logger.info(`Global Motherload: ${motherloadOrb.toFixed(2)} ORB`);
 
     // Check motherload threshold
     if (motherloadOrb < config.motherloadThreshold) {
@@ -165,7 +174,7 @@ async function deployToRound(): Promise<boolean> {
     }
 
     const squareMask = getSquareMask('all');
-    const deployIx = buildDeployInstruction(config.solPerDeployment, squareMask);
+    const deployIx = await buildDeployInstruction(config.solPerDeployment, squareMask);
     const signature = await sendAndConfirmTransaction([deployIx], 'Auto-Deploy');
 
     logger.info(`✅ Deployment successful: ${signature}`);
@@ -180,6 +189,9 @@ async function deployToRound(): Promise<boolean> {
 
 export async function autoDeployCommand(): Promise<void> {
   try {
+    // Setup signal handlers for graceful shutdown
+    setupSignalHandlers();
+
     logger.info('='.repeat(60));
     logger.info('Starting Auto-Deploy Bot');
     logger.info('='.repeat(60));

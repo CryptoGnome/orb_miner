@@ -50,7 +50,7 @@ export async function deployCommand(): Promise<void> {
     }
 
     // Build and send deploy instruction
-    const deployIx = buildDeployInstruction(config.solPerDeployment, squareMask);
+    const deployIx = await buildDeployInstruction(config.solPerDeployment, squareMask);
     const signature = await sendAndConfirmTransaction([deployIx], 'Deploy');
 
     logger.info(`Deployment successful!`);
