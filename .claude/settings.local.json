@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(tree:*)",
+      "Bash(dir /s \"c:\\Users\\oimap\\Desktop\\orb_miner\")",
+      "Bash(npm install)",
+      "Bash(npm run build:*)",
+      "Bash(node verify-motherload.js:*)",
+      "Bash(node find-motherload.js:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}
