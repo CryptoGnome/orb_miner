@@ -262,15 +262,15 @@ export async function buildExecuteAutomationInstruction(): Promise<TransactionIn
   // Read mask (number of squares) from automation account (offset 104, u64 LE)
   const mask = automationAccount.data.readBigUInt64LE(104);
 
-  logger.info(`Execute automation PDAs:`);
-  logger.info(`  Executor/Authority: ${wallet.publicKey.toBase58()}`);
-  logger.info(`  Automation: ${automationPDA.toBase58()}`);
-  logger.info(`  Board: ${boardPDA.toBase58()}`);
-  logger.info(`  Miner: ${minerPDA.toBase58()}`);
-  logger.info(`  Round: ${roundPDA.toBase58()} (round ${board.roundId.toString()})`);
-  logger.info(`Execute automation params:`);
-  logger.info(`  Amount/square: ${amountPerSquare.toString()} lamports (${Number(amountPerSquare) / 1e9} SOL)`);
-  logger.info(`  Squares: ${mask.toString()}`);
+  logger.debug(`Execute automation PDAs:`);
+  logger.debug(`  Executor/Authority: ${wallet.publicKey.toBase58()}`);
+  logger.debug(`  Automation: ${automationPDA.toBase58()}`);
+  logger.debug(`  Board: ${boardPDA.toBase58()}`);
+  logger.debug(`  Miner: ${minerPDA.toBase58()}`);
+  logger.debug(`  Round: ${roundPDA.toBase58()} (round ${board.roundId.toString()})`);
+  logger.debug(`Execute automation params:`);
+  logger.debug(`  Amount/square: ${amountPerSquare.toString()} lamports (${Number(amountPerSquare) / 1e9} SOL)`);
+  logger.debug(`  Squares: ${mask.toString()}`);
 
   // Build Execute Automation instruction data (13 bytes total):
   // Based on real ORB transaction analysis:
@@ -287,7 +287,7 @@ export async function buildExecuteAutomationInstruction(): Promise<TransactionIn
   data.writeUInt32LE(0, 5);                        // Unknown/padding
   data.writeUInt32LE(maskU32, 9);                  // Square count
 
-  logger.info(`Instruction data (hex): ${data.toString('hex')}`);
+  logger.debug(`Instruction data (hex): ${data.toString('hex')}`);
 
   // Account keys (7 accounts) based on real ORB transaction:
   // 0. signer (executor)
@@ -515,12 +515,12 @@ export async function sendAndConfirmTransaction(
         throw error;
       }
 
-      logger.info(`${context}: Transaction sent: ${signature}`);
+      logger.debug(`${context}: Transaction sent: ${signature}`);
 
       // Confirm transaction
       await connection.confirmTransaction(signature, 'confirmed');
 
-      logger.info(`${context}: Transaction confirmed: ${signature}`);
+      logger.debug(`${context}: Transaction confirmed: ${signature}`);
       return signature;
     },
     { maxRetries: config.deployMaxRetries },

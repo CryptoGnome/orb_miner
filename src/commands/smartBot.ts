@@ -23,7 +23,7 @@ import { config } from '../utils/config';
 import { sleep } from '../utils/retry';
 import { TransactionInstruction, SystemProgram, LAMPORTS_PER_SOL, PublicKey } from '@solana/web3.js';
 import BN from 'bn.js';
-import logger from '../utils/logger';
+import logger, { ui } from '../utils/logger';
 
 /**
  * Smart Autonomous ORB Mining Bot
@@ -296,27 +296,23 @@ async function getAutomationInfo() {
  */
 async function autoSetupAutomation(): Promise<boolean> {
   try {
-    logger.info('='.repeat(60));
-    logger.info('AUTO-SETUP: Creating Automation Account');
-    logger.info('='.repeat(60));
-
     const wallet = getWallet();
     const solBalance = await getSolBalance();
-    logger.info(`Current SOL Balance: ${solBalance.toFixed(4)} SOL`);
+    ui.status('Wallet Balance', `${solBalance.toFixed(4)} SOL`);
 
     // Calculate usable budget
     const usableBudget = solBalance * (config.initialAutomationBudgetPct / 100);
-    logger.info(`Usable Budget (${config.initialAutomationBudgetPct}%): ${usableBudget.toFixed(4)} SOL`);
+    ui.status('Allocating', `${usableBudget.toFixed(4)} SOL (${config.initialAutomationBudgetPct}%)`);
 
     if (usableBudget < 0.5) {
-      logger.error('❌ Insufficient SOL balance. Need at least 0.56 SOL (0.5 usable + 0.06 reserve)');
+      ui.error('Insufficient balance - need at least 0.56 SOL');
       return false;
     }
 
     // Get current motherload for smart allocation
     const treasury = await fetchTreasury();
     const motherloadOrb = Number(treasury.motherlode) / 1e9;
-    logger.info(`Current Motherload: ${motherloadOrb.toFixed(2)} ORB`);
+    ui.status('Current Motherload', `${motherloadOrb.toFixed(2)} ORB`);
 
     // Calculate target rounds based on motherload
     const targetRounds = calculateTargetRounds(motherloadOrb);
@@ -324,9 +320,7 @@ async function autoSetupAutomation(): Promise<boolean> {
     const solPerSquare = usableBudget / totalSquares;
     const solPerRound = solPerSquare * 25;
 
-    logger.info(`Target Rounds: ${targetRounds} (based on ${motherloadOrb.toFixed(0)} ORB motherload)`);
-    logger.info(`SOL per square: ${solPerSquare.toFixed(6)} SOL`);
-    logger.info(`SOL per round: ${solPerRound.toFixed(4)} SOL`);
+    ui.status('Strategy', `${targetRounds} rounds @ ${solPerRound.toFixed(4)} SOL/round`);
 
     if (config.dryRun) {
       logger.info('[DRY RUN] Would create automation account');
@@ -335,9 +329,9 @@ async function autoSetupAutomation(): Promise<boolean> {
 
     // Create automation account
     const deposit = usableBudget;
-    const feePerExecution = 0.00001; // Minimal self-execution fee
+    const feePerExecution = 0.00001;
     const strategy = AutomationStrategy.Random;
-    const squareMask = 25n; // All 25 squares
+    const squareMask = 25n;
 
     const instruction = buildAutomateInstruction(
       solPerSquare,
@@ -348,16 +342,14 @@ async function autoSetupAutomation(): Promise<boolean> {
       wallet.publicKey
     );
 
-    logger.info('Creating automation account...');
+    ui.info('Creating automation account...');
     const signature = await sendAndConfirmTransaction([instruction], 'Setup Automation');
-
-    logger.info('✅ Automation account created successfully!');
-    logger.info(`Transaction: ${signature}`);
-    logger.info(`Will run for approximately ${targetRounds} rounds`);
+    ui.success('Automation account created!');
+    logger.debug(`Transaction: ${signature}`);
 
     // Track setup motherload for dynamic scaling
     setupMotherload = motherloadOrb;
-    logger.info(`📊 Tracking setup motherload: ${setupMotherload.toFixed(2)} ORB`);
+    logger.debug(`Tracking setup motherload: ${setupMotherload.toFixed(2)} ORB`);
 
     return true;
   } catch (error) {
@@ -390,13 +382,13 @@ async function autoClaimRewards(): Promise<void> {
 
       // Auto-claim SOL
       if (miningSol >= config.autoClaimSolThreshold) {
-        logger.info(`Mining SOL rewards (${miningSol.toFixed(4)}) >= threshold (${config.autoClaimSolThreshold}), claiming...`);
+        ui.claim(`Claiming ${miningSol.toFixed(4)} SOL (mining rewards)`);
         instructions.push(buildClaimSolInstruction());
       }
 
       // Auto-claim ORB from mining
       if (miningOrb >= config.autoClaimOrbThreshold) {
-        logger.info(`Mining ORB rewards (${miningOrb.toFixed(2)}) >= threshold (${config.autoClaimOrbThreshold}), claiming...`);
+        ui.claim(`Claiming ${miningOrb.toFixed(2)} ORB (mining rewards)`);
         instructions.push(await buildClaimOreInstruction());
       }
     }
@@ -404,13 +396,11 @@ async function autoClaimRewards(): Promise<void> {
     // Send mining claims first (if any)
     if (instructions.length > 0 && !config.dryRun) {
       const signature = await sendAndConfirmTransaction(instructions, 'Auto-Claim Mining');
-      logger.info(`✅ Auto-claim mining successful: ${signature}`);
+      ui.success(`Claimed mining rewards`);
+      logger.debug(`Transaction: ${signature}`);
     }
 
     // Check staking rewards (separate transaction to avoid failing mining claims)
-    // Note: Staking rewards come from buybacks and are calculated on-chain by the program.
-    // The 'rewards' field in the stake account doesn't reflect claimable amount.
-    // We attempt to claim the threshold amount and let the program decide if enough is available.
     const stake = await fetchStake(wallet.publicKey);
     if (stake) {
       const stakedAmount = Number(stake.balance) / 1e9;
@@ -419,14 +409,12 @@ async function autoClaimRewards(): Promise<void> {
         logger.debug(`Staking: ${stakedAmount.toFixed(2)} ORB staked, attempting to claim ${config.autoClaimStakingOrbThreshold} ORB...`);
 
         try {
-          // Try to claim the threshold amount
-          // If the program has enough rewards available (from buybacks), it will succeed
-          // If not enough has accumulated, the transaction will fail (silently) and we'll try again next time
           const claimInstruction = await buildClaimYieldInstruction(config.autoClaimStakingOrbThreshold);
           const signature = await sendAndConfirmTransaction([claimInstruction], 'Auto-Claim Staking');
-          logger.info(`✅ Auto-claim staking successful: ${signature} (${config.autoClaimStakingOrbThreshold} ORB)`);
+          ui.success(`Claimed staking rewards`);
+          logger.debug(`Attempted to claim ${config.autoClaimStakingOrbThreshold} ORB from staking`);
+          logger.debug(`Transaction: ${signature}`);
         } catch (error: any) {
-          // This is expected if not enough rewards have accumulated from buybacks yet
           logger.debug(`Staking claim not ready (insufficient rewards from buybacks): ${error.message || error}`);
         }
       }
@@ -490,22 +478,16 @@ async function shouldRestartAutomation(currentMotherload: number): Promise<boole
   const shouldDecrease = percentChange <= -40 && absoluteChange >= 100;
 
   if (shouldIncrease) {
-    logger.info(`\n${'='.repeat(60)}`);
-    logger.info('🚀 MOTHERLOAD GROWTH DETECTED');
-    logger.info(`Setup: ${setupMotherload.toFixed(2)} ORB → Current: ${currentMotherload.toFixed(2)} ORB`);
-    logger.info(`Change: +${percentChange.toFixed(1)}% (+${absoluteChange.toFixed(0)} ORB)`);
-    logger.info('💡 Restarting automation with larger deployment amounts...');
-    logger.info('='.repeat(60));
+    ui.blank();
+    ui.info(`🚀 Motherload increased: ${setupMotherload.toFixed(0)} → ${currentMotherload.toFixed(0)} ORB (+${percentChange.toFixed(0)}%)`);
+    ui.info('Restarting with larger deployment amounts...');
     return true;
   }
 
   if (shouldDecrease) {
-    logger.info(`\n${'='.repeat(60)}`);
-    logger.info('📉 MOTHERLOAD DECREASE DETECTED');
-    logger.info(`Setup: ${setupMotherload.toFixed(2)} ORB → Current: ${currentMotherload.toFixed(2)} ORB`);
-    logger.info(`Change: ${percentChange.toFixed(1)}% (${absoluteChange.toFixed(0)} ORB)`);
-    logger.info('💡 Restarting automation with smaller deployment amounts...');
-    logger.info('='.repeat(60));
+    ui.blank();
+    ui.warning(`📉 Motherload decreased: ${setupMotherload.toFixed(0)} → ${currentMotherload.toFixed(0)} ORB (${percentChange.toFixed(0)}%)`);
+    ui.info('Restarting with smaller deployment amounts...');
     return true;
   }
 
@@ -517,23 +499,23 @@ async function shouldRestartAutomation(currentMotherload: number): Promise<boole
  */
 async function restartAutomationForScaling(): Promise<boolean> {
   try {
-    logger.info('Closing current automation account...');
+    ui.info('Closing current automation...');
     const closeInstruction = buildCloseAutomationInstruction();
     const closeSig = await sendAndConfirmTransaction([closeInstruction], 'Close Automation for Scaling');
-    logger.info(`✅ Automation closed: ${closeSig}`);
+    logger.debug(`Automation closed: ${closeSig}`);
 
     // Wait for closure to propagate
     await sleep(2000);
 
     // Recreate with current motherload (autoSetupAutomation fetches it automatically)
-    logger.info('Recreating automation with updated amounts...');
+    ui.info('Recreating with optimized amounts...');
     const setupSuccess = await autoSetupAutomation();
 
     if (setupSuccess) {
-      logger.info('✅ Automation successfully restarted with optimized amounts!');
+      ui.success('Automation restarted successfully!');
       return true;
     } else {
-      logger.error('❌ Failed to recreate automation');
+      ui.error('Failed to recreate automation');
       return false;
     }
   } catch (error) {
@@ -553,10 +535,11 @@ async function autoRefundAutomation(automationInfo: any): Promise<boolean> {
       return true; // Balance is sufficient
     }
 
-    logger.warn(`⚠️  Automation balance low: ${balanceSol.toFixed(6)} SOL (threshold: ${config.minAutomationBalance})`);
+    ui.warning(`Budget low: ${balanceSol.toFixed(4)} SOL - refunding...`);
 
     if (!config.autoSwapEnabled) {
-      logger.warn('Auto-swap disabled. Please refund automation manually or enable AUTO_SWAP_ENABLED.');
+      ui.error('Auto-swap disabled - manual refund required');
+      logger.warn('Enable AUTO_SWAP_ENABLED in .env or refund manually');
       return false;
     }
 
@@ -565,46 +548,42 @@ async function autoRefundAutomation(automationInfo: any): Promise<boolean> {
     const orbToSwap = Math.max(0, balances.orb - config.minOrbToKeep);
 
     if (orbToSwap < config.minOrbSwapAmount) {
-      logger.error(`❌ Insufficient ORB to swap. Have: ${balances.orb.toFixed(2)}, Reserve: ${config.minOrbToKeep}, Min Swap: ${config.minOrbSwapAmount}`);
-      logger.warn('💡 Tip: Lower MIN_ORB_TO_KEEP or MIN_ORB_SWAP_AMOUNT in .env or claim more ORB rewards');
+      ui.error(`Insufficient ORB to swap (have ${balances.orb.toFixed(2)}, need ${config.minOrbSwapAmount})`);
+      logger.debug(`Reserve: ${config.minOrbToKeep}, Min Swap: ${config.minOrbSwapAmount}`);
       return false;
     }
 
     // Check if ORB price meets minimum threshold
     if (config.minOrbPriceUsd > 0) {
-      logger.info('Checking ORB price before swapping...');
       const { priceInUsd } = await getOrbPrice();
 
       if (priceInUsd === 0) {
-        logger.warn('⚠️  Could not fetch ORB price. Skipping swap for safety.');
-        logger.warn('💡 Set MIN_ORB_PRICE_USD=0 in .env to swap without price check');
+        ui.warning('Cannot fetch ORB price - skipping swap for safety');
         return false;
       }
 
       if (priceInUsd < config.minOrbPriceUsd) {
-        logger.warn(`⚠️  ORB price too low: $${priceInUsd.toFixed(2)} (minimum: $${config.minOrbPriceUsd.toFixed(2)})`);
-        logger.info('💡 Waiting for better price before swapping. Will check again next cycle.');
+        ui.warning(`ORB price too low: $${priceInUsd.toFixed(2)} (min: $${config.minOrbPriceUsd.toFixed(2)})`);
         return false;
       }
 
-      logger.info(`✅ ORB price acceptable: $${priceInUsd.toFixed(2)} (minimum: $${config.minOrbPriceUsd.toFixed(2)})`);
+      logger.debug(`ORB price: $${priceInUsd.toFixed(2)}`);
     }
 
     // Swap ALL available ORB
-    logger.info(`Swapping ALL available ORB to refund automation...`);
-    logger.info(`Total ORB: ${balances.orb.toFixed(2)} | Reserve: ${config.minOrbToKeep} | Swapping: ${orbToSwap.toFixed(2)}`);
+    ui.swap(`Swapping ${orbToSwap.toFixed(2)} ORB to SOL...`);
 
     const result = await swapOrbToSol(orbToSwap, config.slippageBps);
 
     if (result.success && result.solReceived) {
-      logger.info(`✅ Auto-swap successful! Received ${result.solReceived.toFixed(4)} SOL`);
+      ui.success(`Received ${result.solReceived.toFixed(4)} SOL from swap`);
 
       // Transfer SOL to automation PDA
       const wallet = getWallet();
       const [automationPDA] = getAutomationPDA(wallet.publicKey);
       const transferAmount = Math.floor(result.solReceived * LAMPORTS_PER_SOL);
 
-      logger.info(`Transferring ${result.solReceived.toFixed(4)} SOL to automation account...`);
+      logger.debug(`Transferring ${result.solReceived.toFixed(4)} SOL to automation account...`);
 
       const transferInstruction = SystemProgram.transfer({
         fromPubkey: wallet.publicKey,
@@ -614,7 +593,7 @@ async function autoRefundAutomation(automationInfo: any): Promise<boolean> {
 
       if (!config.dryRun) {
         const signature = await sendAndConfirmTransaction([transferInstruction], 'Refund Automation');
-        logger.info(`✅ Transfer completed: ${signature}`);
+        logger.debug(`Transfer completed: ${signature}`);
 
         // Wait a moment and re-check if automation balance actually updated
         await new Promise(resolve => setTimeout(resolve, 2000));
@@ -626,20 +605,20 @@ async function autoRefundAutomation(automationInfo: any): Promise<boolean> {
         }
 
         const updatedBalanceSol = updatedInfo.balance / 1e9;
-        logger.info(`Automation balance after transfer: ${updatedBalanceSol.toFixed(6)} SOL`);
+        logger.debug(`Automation balance after transfer: ${updatedBalanceSol.toFixed(6)} SOL`);
 
         // Check if balance actually increased
         if (updatedBalanceSol < balanceSol + (result.solReceived * 0.5)) {
           logger.warn('⚠️  Transfer succeeded but automation balance did not update!');
           logger.warn('💡 ORB program tracks balance internally - direct transfers don\'t work.');
-          logger.info('🔄 Automatically closing and recreating automation account...');
+          ui.info('Closing and recreating automation account...');
 
           // Close automation account to reclaim SOL
           const closeInstruction = buildCloseAutomationInstruction();
           try {
             const closeSig = await sendAndConfirmTransaction([closeInstruction], 'Close Automation');
-            logger.info(`✅ Automation account closed: ${closeSig}`);
-            logger.info('💰 SOL reclaimed to wallet. Bot will recreate automation on next cycle.');
+            logger.debug(`Automation account closed: ${closeSig}`);
+            ui.success('SOL reclaimed to wallet - bot will recreate automation on next cycle');
 
             // Return false to stop deployment attempts - bot will recreate automation next round
             return false;
@@ -650,7 +629,7 @@ async function autoRefundAutomation(automationInfo: any): Promise<boolean> {
           }
         }
 
-        logger.info(`✅ Automation refund successful! Balance updated to ${updatedBalanceSol.toFixed(6)} SOL`);
+        ui.success(`Automation refunded - balance now ${updatedBalanceSol.toFixed(4)} SOL`);
         return true;
       } else {
         logger.info('[DRY RUN] Would transfer SOL to automation account');
@@ -710,7 +689,7 @@ async function autoStakeOrb(): Promise<void> {
     const orbAvailable = balances.orb - config.minOrbToKeep;
 
     if (orbAvailable >= config.stakeOrbThreshold) {
-      logger.info(`ORB balance (${balances.orb.toFixed(2)}) >= stake threshold (${config.stakeOrbThreshold}), staking...`);
+      ui.stake(`Staking ${orbAvailable.toFixed(2)} ORB...`);
 
       const stakeAmount = orbAvailable;
 
@@ -721,7 +700,8 @@ async function autoStakeOrb(): Promise<void> {
 
       const instruction = await buildStakeInstruction(stakeAmount);
       const signature = await sendAndConfirmTransaction([instruction], 'Auto-Stake');
-      logger.info(`✅ Auto-stake successful: ${signature}`);
+      ui.success(`Staked ${stakeAmount.toFixed(2)} ORB`);
+      logger.debug(`Transaction: ${signature}`);
     }
   } catch (error) {
     logger.error('Auto-stake failed:', error);
@@ -735,24 +715,21 @@ async function autoMineRound(automationInfo: any): Promise<boolean> {
   try {
     // Check if we have enough balance for this round
     if (automationInfo.balance < automationInfo.costPerRound) {
-      logger.warn('⚠️  Automation balance depleted!');
-      logger.warn(`Need: ${(automationInfo.costPerRound / 1e9).toFixed(4)} SOL`);
-      logger.warn(`Have: ${(automationInfo.balance / 1e9).toFixed(6)} SOL`);
+      ui.warning('Budget depleted - attempting refund...');
+      logger.debug(`Need: ${(automationInfo.costPerRound / 1e9).toFixed(4)} SOL, Have: ${(automationInfo.balance / 1e9).toFixed(6)} SOL`);
 
       // Try to refund
       const refunded = await autoRefundAutomation(automationInfo);
       if (!refunded) {
-        logger.error('❌ Cannot continue mining. Automation out of funds.');
+        ui.error('Cannot continue - automation out of funds');
         return false;
       }
 
       // Reload automation info after refund
       const updatedInfo = await getAutomationInfo();
       if (!updatedInfo || updatedInfo.balance < updatedInfo.costPerRound) {
-        logger.warn('⚠️  Transfer complete but automation balance still low.');
-        logger.warn('💡 The ORB program tracks balance internally - direct transfers may not work.');
-        logger.warn('💡 Consider closing and recreating automation account with fresh funds.');
-        logger.warn('💡 Or wait for more ORB rewards to accumulate and swap again.');
+        ui.warning('Refund complete but balance still low');
+        logger.debug('The ORB program tracks balance internally - direct transfers may not work');
         return false;
       }
     }
@@ -765,16 +742,16 @@ async function autoMineRound(automationInfo: any): Promise<boolean> {
     const wallet = getWallet();
     const miner = await fetchMiner(wallet.publicKey);
 
-    logger.info(`🔍 Checking miner checkpoint status...`);
-    logger.info(`Miner exists: ${!!miner}`);
+    logger.debug(`Checking miner checkpoint status...`);
+    logger.debug(`Miner exists: ${!!miner}`);
     if (miner) {
-      logger.info(`Miner checkpointId: ${miner.checkpointId.toString()}, Board roundId: ${board.roundId.toString()}`);
-      logger.info(`Miner behind? ${miner.checkpointId.lt(board.roundId)}`);
+      logger.debug(`Miner checkpointId: ${miner.checkpointId.toString()}, Board roundId: ${board.roundId.toString()}`);
+      logger.debug(`Miner behind? ${miner.checkpointId.lt(board.roundId)}`);
     }
 
     if (miner && miner.checkpointId.lt(board.roundId)) {
       const roundsBehind = board.roundId.sub(miner.checkpointId).toNumber();
-      logger.info(`⚠️  Miner checkpoint behind by ${roundsBehind} round(s)`);
+      ui.info(`Catching up ${roundsBehind} missed round(s)...`);
 
       // Checkpoint in batches (max 10 per transaction due to compute limits)
       const maxCheckpointsPerTx = 10;
@@ -783,7 +760,7 @@ async function autoMineRound(automationInfo: any): Promise<boolean> {
 
       while (remaining > 0) {
         const batchSize = Math.min(remaining, maxCheckpointsPerTx);
-        logger.info(`Sending ${batchSize} checkpoint(s) in one transaction...`);
+        logger.debug(`Sending ${batchSize} checkpoint(s)...`);
 
         const { buildCheckpointInstruction } = await import('../utils/program');
         const checkpointInstructions: TransactionInstruction[] = [];
@@ -805,12 +782,11 @@ async function autoMineRound(automationInfo: any): Promise<boolean> {
 
         try {
           const checkpointSig = await sendAndConfirmTransaction(checkpointInstructions, 'Checkpoint');
-          logger.info(`✅ Checkpointed ${checkpointInstructions.length} round(s): ${checkpointSig}`);
+          logger.debug(`Checkpointed ${checkpointInstructions.length} round(s): ${checkpointSig}`);
           totalCheckpointed += checkpointInstructions.length;
           remaining -= checkpointInstructions.length;
         } catch (error: any) {
           logger.error(`Failed to checkpoint: ${error.message || error}`);
-          // If checkpoint fails, we can't deploy, so return false
           return false;
         }
 
@@ -820,7 +796,7 @@ async function autoMineRound(automationInfo: any): Promise<boolean> {
         }
       }
 
-      logger.info(`✅ Total checkpointed: ${totalCheckpointed} round(s)`);
+      ui.success(`Caught up ${totalCheckpointed} round(s)`);
 
       // Re-fetch board after checkpointing to get current round
       // (round may have advanced during checkpointing)
@@ -846,21 +822,13 @@ async function autoMineRound(automationInfo: any): Promise<boolean> {
       const profitability = await isProfitableToMine(costPerRound, motherloadOrb);
 
       if (!profitability.profitable) {
-        logger.info(`\n${'='.repeat(60)}`);
-        logger.info('❌ UNPROFITABLE MINING CONDITIONS');
-        logger.info('='.repeat(60));
-        logger.info(`Motherload: ${motherloadOrb.toFixed(2)} ORB`);
-        logger.info(`ORB Price: ${profitability.orbPrice.toFixed(6)} SOL`);
-        logger.info('\nProduction Cost Analysis:');
-        logger.info(`  ${profitability.breakdownMessage.split('\n').join('\n  ')}`);
-        logger.info('='.repeat(60));
-        logger.info('💡 Skipping this round - waiting for better conditions');
-        logger.info('='.repeat(60));
+        ui.warning(`Unprofitable conditions (EV: ${profitability.expectedValue.toFixed(6)} SOL) - waiting...`);
+        logger.debug(`Motherload: ${motherloadOrb.toFixed(2)} ORB, ORB Price: ${profitability.orbPrice.toFixed(6)} SOL`);
+        logger.debug(`${profitability.breakdownMessage}`);
         return false;
       } else {
         // Log profitability info at debug level
-        logger.debug(`\nProduction Cost Analysis (Profitable):`);
-        logger.debug(`  ${profitability.breakdownMessage.split('\n').join('\n  ')}`);
+        logger.debug(`Production Cost Analysis (Profitable): ${profitability.breakdownMessage}`);
       }
     }
 
@@ -872,10 +840,10 @@ async function autoMineRound(automationInfo: any): Promise<boolean> {
 
     // Execute deployment
     const solPerRound = automationInfo.costPerRound / 1e9;
-    const solPerSquare = automationInfo.amountPerSquare / 1e9;
+    const remainingBalance = automationInfo.balance / 1e9;
 
-    logger.info(`Deploying ${solPerRound.toFixed(4)} SOL to ${automationInfo.mask} squares (${solPerSquare.toFixed(6)} SOL/square)...`);
-    logger.info(`Remaining balance: ${(automationInfo.balance / 1e9).toFixed(6)} SOL`);
+    ui.mining(`Deploying ${solPerRound.toFixed(4)} SOL across 25 squares`);
+    logger.debug(`Remaining balance: ${remainingBalance.toFixed(6)} SOL`);
 
     if (config.dryRun) {
       logger.info('[DRY RUN] Would execute automation deployment');
@@ -886,7 +854,8 @@ async function autoMineRound(automationInfo: any): Promise<boolean> {
     const instruction = await buildExecuteAutomationInstruction();
     const signature = await sendAndConfirmTransaction([instruction], 'Auto-Mine');
 
-    logger.info(`✅ Deployment successful: ${signature}`);
+    ui.success(`Mining deployment complete`);
+    logger.debug(`Transaction: ${signature}`);
     logger.info(`[TRANSACTION] Auto-Mine | ${solPerRound.toFixed(4)} SOL | ${signature}`);
 
     return true;
@@ -895,7 +864,7 @@ async function autoMineRound(automationInfo: any): Promise<boolean> {
 
     // Handle checkpoint required error
     if (errorMsg.includes('not checkpointed') || errorMsg.includes('checkpoint')) {
-      logger.info('⚠️  Miner needs checkpointing. Catching up on previous rounds...');
+      ui.info('Catching up on previous rounds...');
 
       try {
         const { buildCheckpointInstruction } = await import('../utils/program');
@@ -921,9 +890,10 @@ async function autoMineRound(automationInfo: any): Promise<boolean> {
         }
 
         // Send all checkpoints in ONE transaction
-        logger.info(`Sending ${checkpointInstructions.length} checkpoint(s) in one transaction...`);
+        logger.debug(`Sending ${checkpointInstructions.length} checkpoint(s)...`);
         const signature = await sendAndConfirmTransaction(checkpointInstructions, 'Checkpoint');
-        logger.info(`✅ Checkpointed ${checkpointInstructions.length} round(s): ${signature}`);
+        ui.success(`Caught up ${checkpointInstructions.length} round(s)`);
+        logger.debug(`Transaction: ${signature}`);
 
         // Retry deployment after successful checkpoint
         if (!config.dryRun) {
@@ -931,7 +901,8 @@ async function autoMineRound(automationInfo: any): Promise<boolean> {
           const deploySig = await sendAndConfirmTransaction([instruction], 'Auto-Mine');
 
           const solPerRound = automationInfo.costPerRound / 1e9;
-          logger.info(`✅ Deployment successful: ${deploySig}`);
+          ui.success(`Mining deployment complete`);
+          logger.debug(`Transaction: ${deploySig}`);
           logger.info(`[TRANSACTION] Auto-Mine | ${solPerRound.toFixed(4)} SOL | ${deploySig}`);
           return true;
         }
@@ -961,18 +932,16 @@ export async function smartBotCommand(): Promise<void> {
   try {
     setupSignalHandlers();
 
-    logger.info('='.repeat(60));
-    logger.info('🤖 SMART AUTONOMOUS ORB MINING BOT');
-    logger.info('='.repeat(60));
-    logger.info('Fully automated mining with intelligent management');
-    logger.info('Press Ctrl+C to stop');
-    logger.info('='.repeat(60));
+    ui.header('🤖 ORB MINING BOT - AUTONOMOUS MODE');
+    ui.info('Fully automated mining • Press Ctrl+C to stop');
+    ui.blank();
 
     // Step 1: Check/Setup automation account
     let automationInfo = await getAutomationInfo();
 
     if (!automationInfo) {
-      logger.info('No automation account found. Setting up...');
+      ui.section('INITIAL SETUP');
+      ui.info('Creating automation account...');
       const setupSuccess = await autoSetupAutomation();
 
       if (!setupSuccess) {
@@ -981,7 +950,7 @@ export async function smartBotCommand(): Promise<void> {
       }
 
       // Wait for account propagation and reload automation info
-      logger.info('Waiting for automation account to propagate...');
+      logger.debug('Waiting for automation account to propagate...');
       await sleep(2000);
 
       // Retry loading automation info up to 5 times
@@ -1004,29 +973,29 @@ export async function smartBotCommand(): Promise<void> {
       const solPerRound = automationInfo.costPerRound / 1e9;
       const estimatedRounds = Math.floor(automationInfo.balance / automationInfo.costPerRound);
 
-      logger.info(`✅ Automation loaded successfully`);
-      logger.info(`Balance: ${balance.toFixed(6)} SOL`);
-      logger.info(`Cost per round: ${solPerRound.toFixed(4)} SOL`);
-      logger.info(`Estimated rounds: ~${estimatedRounds}`);
+      ui.success(`Automation ready`);
+      ui.status('Budget', `${balance.toFixed(4)} SOL (~${estimatedRounds} rounds)`);
+      ui.status('Per Round', `${solPerRound.toFixed(4)} SOL`);
     } else {
-      logger.info('✅ Automation account found');
+      ui.success('Automation account found');
       const balance = automationInfo.balance / 1e9;
       const solPerRound = automationInfo.costPerRound / 1e9;
       const estimatedRounds = Math.floor(automationInfo.balance / automationInfo.costPerRound);
 
-      logger.info(`Balance: ${balance.toFixed(6)} SOL`);
-      logger.info(`Cost per round: ${solPerRound.toFixed(4)} SOL`);
-      logger.info(`Estimated rounds: ~${estimatedRounds}`);
+      ui.status('Budget', `${balance.toFixed(4)} SOL (~${estimatedRounds} rounds)`);
+      ui.status('Per Round', `${solPerRound.toFixed(4)} SOL`);
     }
 
-    logger.info('\n' + '='.repeat(60));
-    logger.info('Configuration:');
-    logger.info(`  Motherload threshold: ${config.motherloadThreshold} ORB`);
-    logger.info(`  Auto-claim SOL: ${config.autoClaimSolThreshold} SOL`);
-    logger.info(`  Auto-claim ORB: ${config.autoClaimOrbThreshold} ORB`);
-    logger.info(`  Auto-swap: ${config.autoSwapEnabled ? 'Enabled' : 'Disabled'}`);
-    logger.info(`  Auto-stake: ${config.autoStakeEnabled ? 'Enabled' : 'Disabled'}`);
-    logger.info('='.repeat(60));
+    ui.blank();
+    ui.section('BOT CONFIGURATION');
+    ui.status('Motherload Threshold', `${config.motherloadThreshold} ORB`);
+    ui.status('Auto-Claim SOL', `${config.autoClaimSolThreshold} SOL`);
+    ui.status('Auto-Claim ORB', `${config.autoClaimOrbThreshold} ORB`);
+    ui.status('Auto-Swap', config.autoSwapEnabled ? 'Enabled' : 'Disabled');
+    ui.status('Auto-Stake', config.autoStakeEnabled ? 'Enabled' : 'Disabled');
+    ui.blank();
+    ui.info('Bot is now running... Monitoring for new rounds');
+    ui.blank();
 
     // Step 2: Main autonomous loop
     let lastRoundId = '';
@@ -1049,9 +1018,7 @@ export async function smartBotCommand(): Promise<void> {
 
         // Check if this is a new round
         if (currentRoundId !== lastRoundId) {
-          logger.info(`\n${'='.repeat(60)}`);
-          logger.info(`📍 New Round: ${currentRoundId}`);
-          logger.info('='.repeat(60));
+          ui.section(`ROUND ${currentRoundId}`);
           lastRoundId = currentRoundId;
 
           // Check motherload for dynamic scaling
@@ -1088,7 +1055,7 @@ export async function smartBotCommand(): Promise<void> {
             }
 
             // Wait for account propagation
-            logger.info('Waiting for new automation account to propagate...');
+            logger.debug('Waiting for new automation account to propagate...');
             await sleep(2000);
 
             // Reload automation info
@@ -1102,10 +1069,9 @@ export async function smartBotCommand(): Promise<void> {
             const solPerRound = automationInfo.costPerRound / 1e9;
             const estimatedRounds = Math.floor(automationInfo.balance / automationInfo.costPerRound);
 
-            logger.info(`✅ Automation recreated successfully`);
-            logger.info(`Balance: ${balance.toFixed(6)} SOL`);
-            logger.info(`Cost per round: ${solPerRound.toFixed(4)} SOL`);
-            logger.info(`Estimated rounds: ~${estimatedRounds}`);
+            ui.success('Automation recreated');
+            ui.status('Budget', `${balance.toFixed(4)} SOL (~${estimatedRounds} rounds)`);
+            ui.status('Per Round', `${solPerRound.toFixed(4)} SOL`);
           }
 
           // Auto-mine the new round
@@ -1113,23 +1079,27 @@ export async function smartBotCommand(): Promise<void> {
 
           if (deployed) {
             deployedRounds++;
-            logger.info(`Total deployments: ${deployedRounds}`);
+            ui.info(`Total rounds mined: ${deployedRounds}`);
 
             // Check remaining balance
             const updatedInfo = await getAutomationInfo();
             if (updatedInfo) {
               const remainingRounds = Math.floor(updatedInfo.balance / updatedInfo.costPerRound);
+              const remainingBalance = updatedInfo.balance / 1e9;
+              ui.status('Remaining Budget', `${remainingBalance.toFixed(4)} SOL (~${remainingRounds} rounds)`);
+
               if (remainingRounds < 5 && remainingRounds > 0) {
-                logger.warn(`⚠️  WARNING: Only ~${remainingRounds} rounds remaining!`);
+                ui.warning(`Only ${remainingRounds} rounds remaining!`);
               } else if (remainingRounds === 0) {
-                logger.info('Automation depleted. Attempting refund...');
+                ui.warning('Budget depleted - attempting refund...');
                 const refunded = await autoRefundAutomation(updatedInfo);
                 if (!refunded) {
-                  logger.info('Cannot refund. Stopping bot.');
+                  ui.error('Cannot refund - stopping bot');
                   break;
                 }
               }
             }
+            ui.blank();
           }
         }
 
@@ -1149,10 +1119,10 @@ export async function smartBotCommand(): Promise<void> {
       }
     }
 
-    logger.info('\n' + '='.repeat(60));
-    logger.info('🤖 Smart Bot Stopped');
-    logger.info(`Total rounds deployed: ${deployedRounds}`);
-    logger.info('='.repeat(60));
+    ui.blank();
+    ui.header('BOT STOPPED');
+    ui.info(`Total rounds mined: ${deployedRounds}`);
+    ui.blank();
 
   } catch (error) {
     logger.error('Smart bot failed:', error);
