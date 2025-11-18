@@ -238,6 +238,9 @@ export async function executeSwap(quote: JupiterQuote): Promise<string | null> {
 
     // Get swap transaction from Jupiter
     logger.info(`Requesting swap transaction from ${swapEndpoint}...`);
+    const priorityFee = config.swapPriorityFeeLamports;
+    logger.debug(`Using priority fee: ${priorityFee === 'auto' ? 'auto' : `${priorityFee} lamports (~${(priorityFee as number / 1e9).toFixed(6)} SOL)`}`);
+
     const swapResponse = await axios.post<JupiterSwapResponse>(
       `${swapEndpoint}/swap`,
       {
@@ -245,7 +248,7 @@ export async function executeSwap(quote: JupiterQuote): Promise<string | null> {
         userPublicKey: wallet.publicKey.toString(),
         wrapAndUnwrapSol: true,
         dynamicComputeUnitLimit: true,
-        prioritizationFeeLamports: 'auto',
+        prioritizationFeeLamports: priorityFee,
       },
       {
         timeout: 30000,

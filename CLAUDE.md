@@ -219,6 +219,9 @@ All bot behavior is controlled by .env variables. **Threshold-based settings** f
 - `MIN_ORB_TO_KEEP`: Never go below this ORB balance (default: 0 ORB)
 - `MIN_ORB_SWAP_AMOUNT`: Minimum amount to trigger swap (default: 0.1 ORB)
 - `SLIPPAGE_BPS`: Slippage tolerance for swaps (default: 50 bps = 0.5%)
+- `SWAP_PRIORITY_FEE_LAMPORTS`: Priority fee for swaps (default: 100000 lamports = 0.0001 SOL)
+  - Use `auto` to let Jupiter decide, or specify lamports for guaranteed priority
+  - Higher values = faster landing during network congestion
 
 ### Auto-Stake Settings (Optional)
 - `AUTO_STAKE_ENABLED`: Enable auto-staking excess ORB (default: false)

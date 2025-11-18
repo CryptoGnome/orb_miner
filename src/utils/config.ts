@@ -69,6 +69,7 @@ export interface Config {
   minOrbToKeep: number;
   minOrbSwapAmount: number;
   slippageBps: number;
+  swapPriorityFeeLamports: number | 'auto';
   jupiterApiUrl: string;
 
   // Safety Settings
@@ -95,6 +96,14 @@ function getEnvBoolean(key: string, defaultValue: boolean): boolean {
   const value = process.env[key];
   if (!value) return defaultValue;
   return value.toLowerCase() === 'true';
+}
+
+function getEnvPriorityFee(key: string, defaultValue: number | 'auto'): number | 'auto' {
+  const value = process.env[key];
+  if (!value) return defaultValue;
+  if (value.toLowerCase() === 'auto') return 'auto';
+  const numValue = parseInt(value);
+  return isNaN(numValue) ? defaultValue : numValue;
 }
 
 export function loadConfig(): Config {
@@ -163,6 +172,7 @@ export function loadConfig(): Config {
       minOrbToKeep: getEnvNumber('MIN_ORB_TO_KEEP', 5),
       minOrbSwapAmount: getEnvNumber('MIN_ORB_SWAP_AMOUNT', 0.1),
       slippageBps: getEnvNumber('SLIPPAGE_BPS', 50),
+      swapPriorityFeeLamports: getEnvPriorityFee('SWAP_PRIORITY_FEE_LAMPORTS', 100000),
       jupiterApiUrl: getEnv('JUPITER_API_URL', 'https://quote-api.jup.ag/v6'),
 
       // Safety Settings
