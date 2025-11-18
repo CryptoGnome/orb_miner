@@ -3,6 +3,7 @@ import {
   getAutomationPDA,
   getMinerPDA,
   fetchBoard,
+  fetchRound,
   fetchMiner,
   fetchStake,
   fetchTreasury
@@ -115,87 +116,19 @@ function calculateTargetRounds(motherloadOrb: number): number {
 }
 
 /**
- * Calculate expected ORB rewards per round based on mining mechanics
- *
- * Per Round Rewards:
- * - Base: +4 ORB minted per round (split among winners on winning block)
- *   - 50% of time: split proportionally among all winners
- *   - 50% of time: one winner gets all 4 ORB (weighted random)
- * - Motherload: +0.8 ORB added per round, 1/625 chance to hit
- *   - When hit: split proportionally among winners
- * - Refining Fee: 10% on claimed rewards (redistributed to holders)
- *
- * @param motherloadOrb Current motherload size in ORB
- * @param ourSquares Number of squares we're deploying to (typically 25)
- * @param estimatedCompetitionMultiplier Estimated competition level (1 = just us, 2 = double competition, etc.)
- * @returns Expected ORB rewards before refining fee
- */
-function calculateExpectedOrbRewards(
-  motherloadOrb: number,
-  ourSquares: number = 25,
-  estimatedCompetitionMultiplier: number = 10 // Conservative estimate: assume 10x our deployment
-): number {
-  // Our chance of having the winning block (assuming equal deployment across squares)
-  // If we deploy to all 25 squares and competition is 10x, we have ~9% of total deployment
-  const ourShareOfTotal = ourSquares / (ourSquares * estimatedCompetitionMultiplier);
-
-  // Base reward: 4 ORB per round
-  // 50% split proportionally, 50% winner-takes-all (weighted random)
-  // Expected value = 0.5 × (our_share × 4) + 0.5 × (our_share × 4) = our_share × 4
-  const baseRewardExpected = ourShareOfTotal * 4;
-
-  // Motherload reward: 1/625 chance to hit, split proportionally if we're on winning block
-  const motherloadChance = 1 / 625;
-  const motherloadExpected = motherloadChance * ourShareOfTotal * motherloadOrb;
-
-  // Total expected ORB (before 10% refining fee)
-  const totalExpected = baseRewardExpected + motherloadExpected;
-
-  // After 10% refining fee (we lose 10% when claiming)
-  const afterRefining = totalExpected * 0.9;
-
-  return afterRefining;
-}
-
-/**
- * Calculate expected SOL returns from losing blocks
- *
- * When we win, we get SOL from all losing blocks split proportionally.
- * This is difficult to estimate without knowing total deployment patterns.
- *
- * @param ourDeploymentSol SOL we're deploying
- * @param _estimatedTotalDeployment Estimated total SOL deployed by all miners (for future use)
- * @returns Expected SOL returned (very rough estimate)
- */
-function calculateExpectedSolReturns(
-  ourDeploymentSol: number,
-  _estimatedTotalDeployment: number
-): number {
-  // If we deploy X SOL and win, we get back:
-  // - Our X SOL (on losing blocks)
-  // - Share of other miners' SOL on losing blocks
-  //
-  // Very rough estimate: if total deployment is Y and we have X/Y share,
-  // we expect to get back approximately our share of the pot when we win
-  //
-  // This is highly variable and depends on competition patterns
-  // For safety, assume we break even on SOL (conservative)
-
-  return ourDeploymentSol * 0.95; // Assume we get 95% of our SOL back on average
-}
-
-/**
  * Check if mining is profitable based on production cost analysis
  *
  * EV = (Expected ORB × ORB Price in SOL) + Expected SOL Back - Production Cost
  *
  * @param costPerRound SOL deployed per round (production cost)
  * @param motherloadOrb Current motherload in ORB
+ * @param currentRound Current round data (to get REAL competition)
  * @returns Object with profitability info
  */
 async function isProfitableToMine(
   costPerRound: number,
-  motherloadOrb: number
+  motherloadOrb: number,
+  currentRound?: any // Round data with totalDeployed
 ): Promise<{
   profitable: boolean;
   expectedValue: number;
@@ -203,6 +136,7 @@ async function isProfitableToMine(
   expectedReturns: number;
   orbPrice: number;
   breakdownMessage: string;
+  actualCompetition?: number;
 }> {
   try {
     // Get current ORB price in SOL
@@ -220,10 +154,46 @@ async function isProfitableToMine(
       };
     }
 
-    // Calculate expected rewards (use config's competition multiplier)
-    const competitionMultiplier = config.estimatedCompetitionMultiplier || 10;
-    const expectedOrbRewards = calculateExpectedOrbRewards(motherloadOrb, 25, competitionMultiplier);
-    const expectedSolBack = calculateExpectedSolReturns(costPerRound, costPerRound * competitionMultiplier);
+    // Calculate YOUR share of total deployment using REAL on-chain data
+    let yourShareOfTotal: number;
+    let competitionMultiplier: number;
+    let competitionSource: string;
+
+    if (currentRound && currentRound.totalDeployed) {
+      // Use REAL competition data from Round account
+      const totalDeployedSol = Number(currentRound.totalDeployed) / 1e9;
+
+      // If round just started and totalDeployed is near 0, fall back to estimate
+      if (totalDeployedSol < 0.01) {
+        competitionMultiplier = config.estimatedCompetitionMultiplier || 10;
+        yourShareOfTotal = 1 / (competitionMultiplier + 1);
+        competitionSource = `estimate (${competitionMultiplier}x) - round just started`;
+      } else {
+        // Calculate actual share: your deployment / (total + your deployment)
+        yourShareOfTotal = costPerRound / (totalDeployedSol + costPerRound);
+        competitionMultiplier = totalDeployedSol / costPerRound;
+        competitionSource = `REAL on-chain data (${competitionMultiplier.toFixed(1)}x)`;
+      }
+    } else {
+      // Fall back to config estimate if Round data not available
+      competitionMultiplier = config.estimatedCompetitionMultiplier || 10;
+      yourShareOfTotal = 1 / (competitionMultiplier + 1);
+      competitionSource = `estimate (${competitionMultiplier}x) - Round data unavailable`;
+    }
+
+    // Calculate expected ORB rewards based on YOUR actual share
+    // Base reward: 4 ORB per round (split proportionally)
+    const baseRewardExpected = yourShareOfTotal * 4;
+
+    // Motherload reward: 1/625 chance to hit, split proportionally
+    const motherloadChance = 1 / 625;
+    const motherloadExpected = motherloadChance * yourShareOfTotal * motherloadOrb;
+
+    // Total expected ORB (after 10% refining fee)
+    const expectedOrbRewards = (baseRewardExpected + motherloadExpected) * 0.9;
+
+    // Expected SOL back (assume 95% of deployment)
+    const expectedSolBack = costPerRound * 0.95;
 
     // Calculate expected value in SOL
     const orbRewardValueInSol = expectedOrbRewards * orbPrice;
@@ -231,16 +201,19 @@ async function isProfitableToMine(
     const expectedValue = totalExpectedReturns - costPerRound;
 
     // Mining is profitable if EV > 0 (or above minimum threshold from config)
-    const minEV = config.minExpectedValue || 0; // Add config option for minimum EV
+    const minEV = config.minExpectedValue || 0;
     const profitable = expectedValue >= minEV;
 
     // Build breakdown message
     const breakdownMessage = [
+      `Competition: ${competitionSource}`,
+      `Your Share: ${(yourShareOfTotal * 100).toFixed(2)}%`,
       `Production Cost: ${costPerRound.toFixed(6)} SOL`,
       `Expected ORB: ${expectedOrbRewards.toFixed(4)} ORB × ${orbPrice.toFixed(6)} SOL = ${orbRewardValueInSol.toFixed(6)} SOL`,
       `Expected SOL Back: ${expectedSolBack.toFixed(6)} SOL`,
       `Total Expected Returns: ${totalExpectedReturns.toFixed(6)} SOL`,
       `Expected Value (EV): ${expectedValue >= 0 ? '+' : ''}${expectedValue.toFixed(6)} SOL`,
+      `ROI: ${((expectedValue / costPerRound) * 100).toFixed(2)}%`,
       `Profitable: ${profitable ? '✅ YES' : '❌ NO'}`,
     ].join('\n  ');
 
@@ -251,6 +224,7 @@ async function isProfitableToMine(
       expectedReturns: totalExpectedReturns,
       orbPrice,
       breakdownMessage,
+      actualCompetition: competitionMultiplier,
     };
   } catch (error) {
     logger.error('Failed to calculate profitability:', error);
@@ -747,7 +721,18 @@ async function autoMineRound(automationInfo: any): Promise<boolean> {
     // Production Cost Profitability Check
     if (config.enableProductionCostCheck) {
       const costPerRound = automationInfo.costPerRound / 1e9;
-      const profitability = await isProfitableToMine(costPerRound, motherloadOrb);
+
+      // Fetch current round to get REAL competition data
+      let currentRound;
+      try {
+        currentRound = await fetchRound(board.roundId);
+        logger.debug(`Round ${board.roundId.toString()}: totalDeployed = ${(Number(currentRound.totalDeployed) / 1e9).toFixed(4)} SOL`);
+      } catch (error) {
+        logger.debug('Could not fetch round data, using estimated competition');
+        currentRound = null;
+      }
+
+      const profitability = await isProfitableToMine(costPerRound, motherloadOrb, currentRound);
 
       if (!profitability.profitable) {
         ui.warning(`Unprofitable conditions (EV: ${profitability.expectedValue.toFixed(6)} SOL) - waiting...`);

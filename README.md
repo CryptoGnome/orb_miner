@@ -15,7 +15,8 @@ ORB is a **lottery-style mining game** on Solana where:
 
 - **Fully Autonomous** - One command starts everything, zero manual intervention needed
 - **Auto-Setup** - Automatically creates and funds automation account on first run
-- **Smart Mining** - Only mines when motherload (rewards) is profitable
+- **Smart Mining** - Price-based profitability analysis using real-time competition data
+- **Production Cost Analysis** - Fetches actual on-chain Round data to calculate exact Expected Value (EV)
 - **Dynamic Scaling** - Automatically adjusts bet sizes based on motherload changes
 - **Auto-Restart** - Recreates automation with optimal amounts when motherload changes significantly
 - **Auto-Claim** - Collects your SOL and ORB rewards automatically
@@ -81,14 +82,16 @@ The bot will use 90% of your SOL balance by default to set up the automation acc
 The `.env` file has sensible defaults, but you can customize:
 
 ```env
-# Only mine when rewards are >= 100 ORB (profitability check)
+# Only mine when rewards are >= 100 ORB
 MOTHERLOAD_THRESHOLD=100
+
+# Production Cost Analysis (RECOMMENDED - uses real-time competition data)
+ENABLE_PRODUCTION_COST_CHECK=true
+MIN_EXPECTED_VALUE=0  # Minimum EV in SOL (0 = break-even or better)
+ESTIMATED_COMPETITION_MULTIPLIER=20  # Fallback estimate
 
 # Use 90% of wallet SOL for automation setup
 INITIAL_AUTOMATION_BUDGET_PCT=90
-
-# Refund automation when balance drops below 0.5 SOL
-MIN_AUTOMATION_BALANCE=0.5
 
 # Auto-claim rewards when they reach these amounts
 AUTO_CLAIM_SOL_THRESHOLD=0.1
@@ -96,8 +99,9 @@ AUTO_CLAIM_ORB_THRESHOLD=1.0
 
 # Auto-swap settings to refund automation
 AUTO_SWAP_ENABLED=true
-SWAP_ORB_AMOUNT=10
+WALLET_ORB_SWAP_THRESHOLD=10
 MIN_ORB_TO_KEEP=5
+MIN_ORB_PRICE_USD=30  # Won't sell below this price
 
 # Optional: Enable auto-staking
 AUTO_STAKE_ENABLED=false
@@ -164,23 +168,40 @@ This shows:
 
 When running, you'll see messages like:
 
+**Profitability Checking:**
+```
+[DEBUG] Round 3142: totalDeployed = 7.7691 SOL
+[DEBUG] Production Cost Analysis (Profitable):
+  Competition: REAL on-chain data (42.5x)
+  Your Share: 2.30%
+  Production Cost: 0.182800 SOL
+  Expected ORB: 0.1123 ORB × 0.123706 SOL = 0.013894 SOL
+  Expected SOL Back: 0.173660 SOL
+  Expected Value (EV): +0.004754 SOL
+  ROI: 2.60%
+  Profitable: ✅ YES
+```
+
+**Mining:**
 ```
 [INFO] Round 12345 detected (Motherload: 250.00 ORB)
-[INFO] Deploying 0.05 SOL per square (25 squares = 1.25 SOL total)
+[INFO] Deploying 0.18 SOL across 25 squares
 [INFO] Deploy successful: https://solscan.io/tx/...
 [INFO] Automation balance: 5.25 SOL remaining
 ```
 
+**Auto-Claiming:**
 ```
 [INFO] Claimable SOL: 0.15 SOL (>= 0.1 threshold)
 [INFO] Claiming SOL rewards...
 [INFO] Claimed 0.15 SOL successfully
 ```
 
+**Unprofitable Conditions:**
 ```
-[INFO] Automation balance low (0.4 SOL < 0.5 threshold)
-[INFO] Swapping 10 ORB to SOL to refund automation...
-[INFO] Swap successful: Received ~0.8 SOL
+[WARNING] Unprofitable conditions (EV: -0.001234 SOL) - waiting...
+[DEBUG] Motherload: 150.00 ORB, ORB Price: 0.050000 SOL
+[DEBUG] Competition too high for current ORB price - skipping round
 ```
 
 ## Stopping the Bot
@@ -205,22 +226,50 @@ The bot will simulate all operations without sending actual transactions.
 
 ## Cost and Profitability
 
+**Production Cost Analysis (Smart Mining):**
+
+The bot features **intelligent profitability checking** that uses real-time blockchain data:
+
+1. **Fetches actual Round data** - Reads `totalDeployed` from the current Round account
+2. **Calculates your exact share** - Determines your percentage of total competition
+3. **Gets current ORB price** - Fetches live ORB/SOL price from Jupiter
+4. **Computes Expected Value (EV)** - Calculates if mining is profitable:
+   ```
+   EV = (Expected ORB × ORB Price) + Expected SOL Back - Production Cost
+   ```
+5. **Only mines when EV > 0** - Skips unprofitable rounds automatically
+
+**Example Calculation:**
+- Your deployment: 0.18 SOL/round
+- Total competition: 7.77 SOL (from Round account)
+- Your share: 2.3% of total deployment
+- ORB price: 0.124 SOL ($17.40)
+- Expected ORB: 0.112 ORB × 0.124 = 0.014 SOL
+- Expected SOL back: 0.174 SOL
+- **Expected Value: +0.0048 SOL (2.6% ROI) ✅ PROFITABLE**
+
+**Configuration:**
+```env
+# Enable/disable production cost checking
+ENABLE_PRODUCTION_COST_CHECK=true
+
+# Minimum EV required (0 = break-even or better)
+MIN_EXPECTED_VALUE=0
+
+# Fallback estimate when Round data unavailable
+ESTIMATED_COMPETITION_MULTIPLIER=20
+```
+
 **Costs per Round:**
 - Deployment: Variable (bot scales based on motherload size)
 - Transaction fees: ~0.001 SOL per deployment
 - Swap fees: ~0.5% when converting ORB to SOL
 
-**Profitability:**
-- Bot only mines when `motherload >= MOTHERLOAD_THRESHOLD`
-- Higher motherload = better expected value (EV)
-- Dynamic scaling: Bot automatically deploys more when motherload is high
-- You win ~4% of rounds (1/25 chance per round with all squares covered)
-
-**Example:**
-- Motherload: 200 ORB (~$200 if ORB = $1)
-- Your deployment: 1.25 SOL (~$250 if SOL = $200)
-- Win rate: 4% (1 in 25 rounds)
-- Win = Your SOL back + 200 ORB + other miners' SOL
+**Key Benefits:**
+- ✅ **Accurate decisions** - Uses real competition, not guesses
+- ✅ **Protects against losses** - Won't mine when ORB price is too low
+- ✅ **Adapts to market** - Automatically adjusts to current conditions
+- ✅ **Maximizes EV** - Only deploys when mathematically profitable
 
 ## Troubleshooting
 
@@ -230,6 +279,10 @@ The bot will simulate all operations without sending actual transactions.
 - Fund your wallet with more SOL
 
 ### Bot not deploying
+- **Profitability check failing** - Bot skips unprofitable rounds when ORB price is low or competition is high
+  - Test profitability: `npx ts-node tests/test-live-profitability.ts`
+  - Check logs for "Unprofitable conditions" warnings
+  - Adjust `MIN_EXPECTED_VALUE` or disable `ENABLE_PRODUCTION_COST_CHECK` if needed
 - Check if motherload is below `MOTHERLOAD_THRESHOLD`
 - Verify automation account has balance: `npx ts-node tests/check-automation-account.ts`
 - Check logs for errors: `tail -f logs/error.log`
@@ -257,6 +310,12 @@ Test individual features:
 ```bash
 # Check balances and status
 npx ts-node tests/test-query.ts
+
+# Test profitability analysis with REAL competition data
+npx ts-node tests/test-live-profitability.ts
+
+# View accurate profitability breakdown
+npx ts-node tests/test-accurate-profitability.ts
 
 # Manual deploy to all 25 squares
 npx ts-node tests/test-deploy.ts
