@@ -31,7 +31,6 @@ export interface Config {
 
   // Smart Bot - Automation Account Settings
   initialAutomationBudgetPct: number;
-  minAutomationBalance: number;
 
   // Smart Bot - Auto-Claim Thresholds
   autoClaimSolThreshold: number;
@@ -126,7 +125,6 @@ export function loadConfig(): Config {
 
       // Smart Bot - Automation Account Settings
       initialAutomationBudgetPct: getEnvNumber('INITIAL_AUTOMATION_BUDGET_PCT', 90),
-      minAutomationBalance: getEnvNumber('MIN_AUTOMATION_BALANCE', 0.5),
 
       // Smart Bot - Auto-Claim Thresholds
       autoClaimSolThreshold: getEnvNumber('AUTO_CLAIM_SOL_THRESHOLD', 0.1),

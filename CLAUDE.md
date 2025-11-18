@@ -171,19 +171,25 @@ The [smartBot.ts](src/commands/smartBot.ts) command implements the fully autonom
    - Auto-claims ORB when >= AUTO_CLAIM_ORB_THRESHOLD
    - Runs independently of mining loop
 
-4. **Auto-Swap (Refund Automation)**:
-   - Monitors automation account balance
-   - When balance < MIN_AUTOMATION_BALANCE, triggers swap
-   - Swaps ORB to SOL to refund automation account
-   - Keeps mining running without interruption
+4. **Auto-Swap (Proactive Selling)**:
+   - Monitors wallet ORB balance
+   - When ORB balance >= WALLET_ORB_SWAP_THRESHOLD, sells ORB to SOL
+   - Swapped SOL stays in wallet for future automation restarts
+   - Respects MIN_ORB_PRICE_USD (won't sell at low prices)
    - Respects MIN_ORB_TO_KEEP safety reserve
 
-5. **Auto-Stake (Optional)**:
+5. **Auto-Restart on Depletion**:
+   - When automation runs out of funds, automatically closes account
+   - Reclaims remaining SOL to wallet
+   - Recreates automation with fresh budget on next round
+   - Seamless cycling: Mine → Deplete → Restart
+
+6. **Auto-Stake (Optional)**:
    - Periodically checks ORB balance
    - Stakes excess ORB when >= STAKE_ORB_THRESHOLD
    - Generates passive yield while mining
 
-6. **Resilience**:
+7. **Resilience**:
    - Retries on failure with exponential backoff
    - Logs all transactions to `logs/transactions.log`
    - Graceful shutdown on Ctrl+C
@@ -199,17 +205,19 @@ All bot behavior is controlled by .env variables. **Threshold-based settings** f
 
 ### Automation Account
 - `INITIAL_AUTOMATION_BUDGET_PCT`: % of wallet SOL to use for setup (default: 90%)
-- `MIN_AUTOMATION_BALANCE`: Trigger refund when balance < this (default: 0.5 SOL)
+  - When depleted, bot auto-closes and recreates with fresh budget
 
 ### Auto-Claim Thresholds
 - `AUTO_CLAIM_SOL_THRESHOLD`: Claim SOL rewards when >= this (default: 0.1 SOL)
 - `AUTO_CLAIM_ORB_THRESHOLD`: Claim ORB rewards when >= this (default: 1.0 ORB)
 - `CHECK_REWARDS_INTERVAL_MS`: How often to check rewards (default: 300000ms / 5 min)
 
-### Auto-Swap Settings
-- `AUTO_SWAP_ENABLED`: Enable auto-swapping ORB to refund automation (default: true)
-- `SWAP_ORB_AMOUNT`: Amount of ORB to swap each time (default: 10 ORB)
-- `MIN_ORB_TO_KEEP`: Never go below this ORB balance (default: 5 ORB)
+### Auto-Swap Settings (Proactive Selling)
+- `AUTO_SWAP_ENABLED`: Enable auto-swapping ORB when balance is high (default: true)
+- `WALLET_ORB_SWAP_THRESHOLD`: Swap when wallet ORB >= this (default: 10 ORB)
+- `MIN_ORB_PRICE_USD`: Minimum ORB price to allow swapping (default: 30 USD)
+- `MIN_ORB_TO_KEEP`: Never go below this ORB balance (default: 0 ORB)
+- `MIN_ORB_SWAP_AMOUNT`: Minimum amount to trigger swap (default: 0.1 ORB)
 - `SLIPPAGE_BPS`: Slippage tolerance for swaps (default: 50 bps = 0.5%)
 
 ### Auto-Stake Settings (Optional)
@@ -246,10 +254,11 @@ tail -f logs/transactions.log
 ```
 
 ### Key Metrics to Monitor
-- **Automation Balance**: Should stay above `MIN_AUTOMATION_BALANCE`
+- **Automation Balance**: Depletes over time, bot auto-restarts when empty
 - **Motherload**: Check if consistently above/below threshold
 - **Claim Success**: Verify rewards are being claimed
-- **Swap Success**: Ensure ORB→SOL swaps complete when triggered
+- **Swap Success**: Ensure ORB→SOL swaps complete when price is good
+- **Wallet SOL**: Accumulated from swaps, used for automation restarts
 
 ### Checking Status Manually
 ```bash
@@ -316,7 +325,7 @@ npx ts-node tests/test-setup-smart-automation.ts
    MOTHERLOAD_THRESHOLD=10
    INITIAL_AUTOMATION_BUDGET_PCT=10
    AUTO_CLAIM_SOL_THRESHOLD=0.001
-   MIN_AUTOMATION_BALANCE=0.1
+   WALLET_ORB_SWAP_THRESHOLD=0.1
    CHECK_ROUND_INTERVAL_MS=5000
    ```
 
@@ -441,16 +450,16 @@ If automation account has issues:
      - Closes current automation and recreates with optimal amounts
      - Example: 300 ORB at setup → 500 ORB now = auto-restart with 67% larger deployments
    - Deploys to all 25 squares when motherload >= threshold
-   - Auto-claims rewards every 30 seconds if thresholds met
-   - Auto-swaps ORB to SOL when automation balance low
+   - Auto-claims rewards periodically if thresholds met
+   - Auto-swaps ORB to SOL when wallet balance is high (proactive selling)
    - Auto-stakes excess ORB if enabled
    - Runs until automation depleted or stopped (Ctrl+C)
 
-3. **Refunding**:
-   - When automation balance < MIN_AUTOMATION_BALANCE:
-     - Bot auto-swaps SWAP_ORB_AMOUNT ORB to SOL
-     - Refunds automation account (TODO: transfer to PDA)
-     - Continues mining without interruption
-   - Manual refund: Transfer SOL to automation PDA address
+3. **Automation Lifecycle**:
+   - **Mining**: Automation account deploys SOL each round
+   - **Depletion**: When balance runs out, bot closes automation account
+   - **Restart**: Next round, bot automatically recreates with fresh budget from wallet SOL
+   - **Profit Loop**: Claim ORB → Swap to SOL → SOL accumulates in wallet → Funds next restart
+   - Seamless cycling without manual intervention
 
 **The bot is fully autonomous - just set thresholds in .env and run `npm start`!**
