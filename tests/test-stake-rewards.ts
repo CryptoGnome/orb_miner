@@ -125,6 +125,34 @@ async function main() {
     console.log(`Lifetime Rewards (u64): ${lifetimeRewards} lamports = ${(Number(lifetimeRewards) / 1e9).toFixed(6)} ORB`);
     offset += 8;
 
+    // Check if there are more bytes (account is 112 bytes total)
+    if (offset < data.length) {
+      console.log(`\n⚠️  Additional data found! ${data.length - offset} bytes remaining`);
+      console.log(`Offset ${offset}-${data.length}:`);
+
+      // Try reading as different types
+      const remainingBytes = data.slice(offset);
+      console.log(`  Raw hex: ${remainingBytes.toString('hex')}`);
+
+      if (remainingBytes.length >= 8) {
+        const possibleU64 = remainingBytes.readBigUInt64LE(0);
+        console.log(`  As u64: ${possibleU64} = ${(Number(possibleU64) / 1e9).toFixed(9)} ORB`);
+        console.log(`  As i64: ${remainingBytes.readBigInt64LE(0)}`);
+      }
+
+      if (remainingBytes.length >= 4) {
+        const possibleU32 = remainingBytes.readUInt32LE(0);
+        console.log(`  As u32: ${possibleU32}`);
+      }
+
+      if (remainingBytes.length >= 1) {
+        const possibleBool = remainingBytes.readUInt8(0);
+        console.log(`  As bool/u8: ${possibleBool}`);
+      }
+
+      offset = data.length;
+    }
+
     console.log(`\nTotal bytes parsed: ${offset} / ${data.length}`);
 
     // Step 5: Compare with fetchStake()

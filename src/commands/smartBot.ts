@@ -220,27 +220,37 @@ async function autoClaimRewards(): Promise<void> {
       }
     }
 
-    // Check staking rewards
-    const stake = await fetchStake(wallet.publicKey);
-    if (stake) {
-      const stakingOrb = Number(stake.rewardsOre) / 1e9;
-
-      logger.debug(`Staking check: ${stakingOrb.toFixed(6)} ORB available (threshold: ${config.autoClaimStakingOrbThreshold})`);
-
-      // Auto-claim ORB from staking
-      if (stakingOrb >= config.autoClaimStakingOrbThreshold) {
-        logger.info(`Staking ORB rewards (${stakingOrb.toFixed(4)}) >= threshold (${config.autoClaimStakingOrbThreshold}), claiming...`);
-        instructions.push(await buildClaimYieldInstruction(stakingOrb));
-      } else if (stakingOrb > 0) {
-        logger.debug(`Staking ORB rewards (${stakingOrb.toFixed(4)}) below threshold (${config.autoClaimStakingOrbThreshold}), waiting...`);
-      }
-    } else {
-      logger.debug('No stake account found');
+    // Send mining claims first (if any)
+    if (instructions.length > 0 && !config.dryRun) {
+      const signature = await sendAndConfirmTransaction(instructions, 'Auto-Claim Mining');
+      logger.info(`✅ Auto-claim mining successful: ${signature}`);
     }
 
-    if (instructions.length > 0 && !config.dryRun) {
-      const signature = await sendAndConfirmTransaction(instructions, 'Auto-Claim');
-      logger.info(`✅ Auto-claim successful: ${signature}`);
+    // Check staking rewards (separate transaction to avoid failing mining claims)
+    // Note: Staking rewards come from buybacks and are calculated on-chain by the program.
+    // The 'rewards' field in the stake account doesn't reflect claimable amount.
+    // We attempt to claim the threshold amount and let the program decide if enough is available.
+    const stake = await fetchStake(wallet.publicKey);
+    if (stake) {
+      const stakedAmount = Number(stake.balance) / 1e9;
+
+      if (stakedAmount > 0 && !config.dryRun) {
+        logger.debug(`Staking: ${stakedAmount.toFixed(2)} ORB staked, attempting to claim ${config.autoClaimStakingOrbThreshold} ORB...`);
+
+        try {
+          // Try to claim the threshold amount
+          // If the program has enough rewards available (from buybacks), it will succeed
+          // If not enough has accumulated, the transaction will fail (silently) and we'll try again next time
+          const claimInstruction = await buildClaimYieldInstruction(config.autoClaimStakingOrbThreshold);
+          const signature = await sendAndConfirmTransaction([claimInstruction], 'Auto-Claim Staking');
+          logger.info(`✅ Auto-claim staking successful: ${signature} (${config.autoClaimStakingOrbThreshold} ORB)`);
+        } catch (error: any) {
+          // This is expected if not enough rewards have accumulated from buybacks yet
+          logger.debug(`Staking claim not ready (insufficient rewards from buybacks): ${error.message || error}`);
+        }
+      }
+    } else {
+      logger.debug('No stake account found (not staking)');
     }
   } catch (error) {
     logger.error('Auto-claim failed:', error);
