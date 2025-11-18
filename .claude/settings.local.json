@@ -5,7 +5,11 @@
       "Bash(npm start)",
       "Bash(npm install)",
       "Bash(npm install:*)",
-      "Bash(npx ts-node:*)"
+      "Bash(npx ts-node:*)",
+      "Bash(npm run build:*)",
+      "Bash(echo:*)",
+      "Bash(curl:*)",
+      "Bash(cat:*)"
     ],
     "deny": [],
     "ask": []

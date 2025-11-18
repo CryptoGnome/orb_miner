@@ -10,16 +10,16 @@ import BN from 'bn.js';
 import { config } from './config';
 import { getWallet } from './wallet';
 import { getConnection } from './solana';
-import { getMinerPDA, getStakePDA, getAutomationPDA } from './accounts';
+import { getMinerPDA, getStakePDA, getAutomationPDA, getBoardPDA, getRoundPDA } from './accounts';
 import logger from './logger';
 import { retry } from './retry';
 
-// Instruction discriminators (extracted from real ORB transactions and ORE source)
-const DEPLOY_DISCRIMINATOR = Buffer.from([0x00, 0x40, 0x42, 0x0f, 0x00, 0x00, 0x00, 0x00]);
-const AUTOMATE_DISCRIMINATOR = 0x00; // From ORE instruction enum
-// ORB uses simple 1-byte discriminators from ORE enum
-// ClaimSOL = 3, ClaimORE = 4 (defined inline in functions)
-const STAKE_DISCRIMINATOR = Buffer.from([0xce, 0xb0, 0xca, 0x12, 0xc8, 0xd1, 0xb3, 0x6c]);
+// Instruction discriminators (extracted from real ORB transactions)
+const DEPLOY_DISCRIMINATOR = Buffer.from([0x00, 0x40, 0x42, 0x0f, 0x00, 0x00, 0x00, 0x00]); // 8-byte deploy discriminator
+const AUTOMATE_DISCRIMINATOR = 0x00; // Setup automation (1-byte)
+const CHECKPOINT_DISCRIMINATOR = 0x02; // Checkpoint miner rewards (1-byte)
+// ClaimSOL = 3, ClaimORE = 4 (1-byte discriminators, defined inline in functions)
+const STAKE_DISCRIMINATOR = Buffer.from([0xce, 0xb0, 0xca, 0x12, 0xc8, 0xd1, 0xb3, 0x6c]); // 8-byte stake discriminator
 
 // Automation strategies
 export enum AutomationStrategy {
@@ -42,6 +42,12 @@ export async function buildDeployInstruction(
   const wallet = getWallet();
   const [minerPDA] = getMinerPDA(wallet.publicKey);
   const [automationPDA] = getAutomationPDA(wallet.publicKey);
+  const [boardPDA] = getBoardPDA();
+
+  // Get current board to get round info
+  const { fetchBoard } = await import('./accounts');
+  const board = await fetchBoard();
+  const [roundPDA] = getRoundPDA(board.roundId);
 
   // Convert SOL amount to lamports
   const amountLamports = new BN(amount * LAMPORTS_PER_SOL);
@@ -63,18 +69,28 @@ export async function buildDeployInstruction(
 
   logger.debug(`Deploy instruction: amount=${amount} SOL (${amountLamports.toString()} lamports)`);
 
-  // Account keys (5 accounts):
+  // Get treasury PDA - needed for automation fee collection
+  const { getTreasuryPDA } = await import('./accounts');
+  const [treasuryPDA] = getTreasuryPDA();
+
+  // Account keys (8 accounts - based on deploy.rs with automation):
   // 0. signer - Wallet (signer, writable)
-  // 1. automation - Automation PDA (writable)
-  // 2. fee_collector - Fee collector address (writable)
-  // 3. miner - Miner PDA (writable)
-  // 4. system_program - System program (read-only)
+  // 1. authority - Wallet (writable)
+  // 2. automation - Automation PDA (writable)
+  // 3. board - Board PDA (writable)
+  // 4. miner - Miner PDA (writable)
+  // 5. round - Round PDA for current round (writable)
+  // 6. treasury - Treasury PDA (writable) - for automation fee collection
+  // 7. system_program - System program (read-only)
   const keys = [
-    { pubkey: wallet.publicKey, isSigner: true, isWritable: true },
-    { pubkey: automationPDA, isSigner: false, isWritable: true },
-    { pubkey: config.orbFeeCollector, isSigner: false, isWritable: true },
-    { pubkey: minerPDA, isSigner: false, isWritable: true },
-    { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
+    { pubkey: wallet.publicKey, isSigner: true, isWritable: true },  // signer
+    { pubkey: wallet.publicKey, isSigner: false, isWritable: true }, // authority
+    { pubkey: automationPDA, isSigner: false, isWritable: true },    // automation
+    { pubkey: boardPDA, isSigner: false, isWritable: true },         // board
+    { pubkey: minerPDA, isSigner: false, isWritable: true },         // miner
+    { pubkey: roundPDA, isSigner: false, isWritable: true },         // round
+    { pubkey: treasuryPDA, isSigner: false, isWritable: true },      // treasury
+    { pubkey: SystemProgram.programId, isSigner: false, isWritable: false }, // system program
   ];
 
   return new TransactionInstruction({
@@ -147,6 +163,148 @@ export function buildAutomateInstruction(
     { pubkey: executorKey, isSigner: false, isWritable: true },
     { pubkey: minerPDA, isSigner: false, isWritable: true },
     { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
+  ];
+
+  return new TransactionInstruction({
+    keys,
+    programId: config.orbProgramId,
+    data,
+  });
+}
+
+// Build Checkpoint instruction (process miner rewards for completed round)
+// Based on ORE checkpoint.rs: https://github.com/regolith-labs/ore/blob/master/program/src/checkpoint.rs
+export async function buildCheckpointInstruction(roundId?: BN): Promise<TransactionInstruction> {
+  const connection = getConnection();
+  const wallet = getWallet();
+  const [boardPDA] = getBoardPDA();
+  const [minerPDA] = getMinerPDA(wallet.publicKey);
+
+  // Get current board and miner to determine which round to checkpoint
+  const { fetchBoard, getTreasuryPDA } = await import('./accounts');
+  const board = await fetchBoard();
+
+  // If roundId not specified, determine which round to checkpoint from miner account
+  let checkpointRoundId: BN;
+  if (roundId) {
+    checkpointRoundId = roundId;
+  } else {
+    // Read miner's round_id - this is the ONLY round that can be checkpointed
+    // Per ORE checkpoint.rs: round.id must equal miner.round_id
+    const minerAccount = await connection.getAccountInfo(minerPDA);
+    if (minerAccount && minerAccount.data.length >= 520) {  // Need at least 512 + 8 bytes for round_id
+      const minerCheckpointId = minerAccount.data.readBigUInt64LE(448);  // PER IDL: checkpoint_id at offset 448
+      const minerRoundId = minerAccount.data.readBigUInt64LE(512);        // PER IDL: round_id at offset 512
+      // IMPORTANT: Must checkpoint miner.round_id, NOT checkpoint_id + 1
+      checkpointRoundId = new BN(minerRoundId.toString());
+      logger.debug(`Miner last checkpointed: ${minerCheckpointId}, miner round_id: ${minerRoundId}, will checkpoint: ${checkpointRoundId.toString()}`);
+    } else {
+      // Fallback to current round - 1
+      checkpointRoundId = board.roundId.subn(1);
+    }
+  }
+
+  const [roundPDA] = getRoundPDA(checkpointRoundId);
+  const [treasuryPDA] = getTreasuryPDA();
+
+  // Checkpoint instruction: 1 byte discriminator (0x02)
+  const data = Buffer.from([CHECKPOINT_DISCRIMINATOR]);
+
+  logger.debug(`Building checkpoint for round ${checkpointRoundId.toString()}`);
+
+  // Account keys (6 accounts based on checkpoint.rs):
+  // 0. signer (wallet, signer, writable)
+  // 1. board (board PDA, writable)
+  // 2. miner (miner PDA, writable)
+  // 3. round (round PDA for checkpointing, writable)
+  // 4. treasury (treasury PDA, writable)
+  // 5. system_program (read-only)
+  const keys = [
+    { pubkey: wallet.publicKey, isSigner: true, isWritable: true },
+    { pubkey: boardPDA, isSigner: false, isWritable: true },
+    { pubkey: minerPDA, isSigner: false, isWritable: true },
+    { pubkey: roundPDA, isSigner: false, isWritable: true },
+    { pubkey: treasuryPDA, isSigner: false, isWritable: true },
+    { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
+  ];
+
+  return new TransactionInstruction({
+    keys,
+    programId: config.orbProgramId,
+    data,
+  });
+}
+
+// Build Execute Automation instruction (trigger automated deployment)
+// Based on reverse engineering real ORB transactions
+// Uses discriminator 0x06 (not deploy discriminator)
+export async function buildExecuteAutomationInstruction(): Promise<TransactionInstruction> {
+  const connection = getConnection();
+  const wallet = getWallet();
+  const [automationPDA] = getAutomationPDA(wallet.publicKey);
+  const [boardPDA] = getBoardPDA();
+  const [minerPDA] = getMinerPDA(wallet.publicKey);
+
+  // Get current round
+  const { fetchBoard } = await import('./accounts');
+  const board = await fetchBoard();
+  const [roundPDA] = getRoundPDA(board.roundId);
+
+  // Fetch automation account to get the configured amount per square
+  const automationAccount = await connection.getAccountInfo(automationPDA);
+  if (!automationAccount || automationAccount.data.length < 112) {
+    throw new Error('Automation account not found or invalid');
+  }
+
+  // Read amount per square from automation account (offset 8, u64 LE)
+  const amountPerSquare = automationAccount.data.readBigUInt64LE(8);
+
+  // Read mask (number of squares) from automation account (offset 104, u64 LE)
+  const mask = automationAccount.data.readBigUInt64LE(104);
+
+  logger.info(`Execute automation PDAs:`);
+  logger.info(`  Executor/Authority: ${wallet.publicKey.toBase58()}`);
+  logger.info(`  Automation: ${automationPDA.toBase58()}`);
+  logger.info(`  Board: ${boardPDA.toBase58()}`);
+  logger.info(`  Miner: ${minerPDA.toBase58()}`);
+  logger.info(`  Round: ${roundPDA.toBase58()} (round ${board.roundId.toString()})`);
+  logger.info(`Execute automation params:`);
+  logger.info(`  Amount/square: ${amountPerSquare.toString()} lamports (${Number(amountPerSquare) / 1e9} SOL)`);
+  logger.info(`  Squares: ${mask.toString()}`);
+
+  // Build Execute Automation instruction data (13 bytes total):
+  // Based on real ORB transaction analysis:
+  // - 1 byte: discriminator (0x06)
+  // - 4 bytes: amount field (u32 LE)
+  // - 4 bytes: unknown/padding
+  // - 4 bytes: square count (u32 LE)
+  const data = Buffer.alloc(13);
+  data.writeUInt8(0x06, 0);                        // Execute automation discriminator
+  // Convert BigInt to safe number (u32 range)
+  const amountU32 = Number(amountPerSquare & 0xFFFFFFFFn);
+  const maskU32 = Number(mask & 0xFFFFFFFFn);
+  data.writeUInt32LE(amountU32, 1);                // Amount field
+  data.writeUInt32LE(0, 5);                        // Unknown/padding
+  data.writeUInt32LE(maskU32, 9);                  // Square count
+
+  logger.info(`Instruction data (hex): ${data.toString('hex')}`);
+
+  // Account keys (7 accounts) based on real ORB transaction:
+  // 0. signer (executor)
+  // 1. authority (wallet)
+  // 2. automation PDA
+  // 3. board PDA
+  // 4. miner PDA
+  // 5. round PDA
+  // 6. system program
+  const keys = [
+    { pubkey: wallet.publicKey, isSigner: true, isWritable: true },          // signer (executor)
+    { pubkey: wallet.publicKey, isSigner: false, isWritable: true },         // authority
+    { pubkey: automationPDA, isSigner: false, isWritable: true },            // automation
+    { pubkey: boardPDA, isSigner: false, isWritable: true },                 // board
+    { pubkey: minerPDA, isSigner: false, isWritable: true },                 // miner
+    { pubkey: roundPDA, isSigner: false, isWritable: true },                 // round
+    { pubkey: SystemProgram.programId, isSigner: false, isWritable: false }, // system program
   ];
 
   return new TransactionInstruction({
@@ -271,6 +429,26 @@ export async function sendAndConfirmTransaction(
       // Sign transaction
       transaction.sign(wallet);
 
+      // Simulate first to get detailed errors
+      try {
+        const simulation = await connection.simulateTransaction(transaction);
+        if (simulation.value.err) {
+          logger.error(`${context}: Simulation failed with error:`, simulation.value.err);
+          const logs = simulation.value.logs || [];
+          if (logs.length > 0) {
+            logger.error(`${context}: Simulation logs:`);
+            logs.forEach(log => logger.error(`  ${log}`));
+          }
+
+          // Include logs in error message for error handling
+          const logsStr = logs.join(' | ');
+          throw new Error(`Simulation failed: ${JSON.stringify(simulation.value.err)} | Logs: ${logsStr}`);
+        }
+      } catch (simError: any) {
+        logger.error(`${context}: Simulation error:`, simError.message);
+        throw simError;
+      }
+
       // Send transaction with detailed error logging
       let signature: string;
       try {
@@ -280,9 +458,9 @@ export async function sendAndConfirmTransaction(
         });
       } catch (error: any) {
         // Log detailed error information
-        logger.error(`${context}: Transaction simulation failed`);
+        logger.error(`${context}: Transaction send failed`);
         if (error.logs) {
-          logger.error(`${context}: Simulation logs:`, error.logs);
+          logger.error(`${context}: Error logs:`, error.logs);
         }
         if (error.message) {
           logger.error(`${context}: Error message:`, error.message);
@@ -307,6 +485,7 @@ export default {
   getSquareMask,
   buildDeployInstruction,
   buildAutomateInstruction,
+  buildCheckpointInstruction,
   buildClaimSolInstruction,
   buildClaimOreInstruction,
   buildStakeInstruction,

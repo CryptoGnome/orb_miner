@@ -12,6 +12,7 @@ const MINER_SEED = Buffer.from('miner');
 const STAKE_SEED = Buffer.from('stake');
 const TREASURY_SEED = Buffer.from('treasury');
 const AUTOMATION_SEED = Buffer.from('automation');
+const CONFIG_SEED = Buffer.from('config');
 
 // Helper to deserialize u64 (8 bytes) as BN
 function deserializeU64(buffer: Buffer, offset: number): BN {
@@ -74,6 +75,36 @@ export function getAutomationPDA(authority: PublicKey): [PublicKey, number] {
     [AUTOMATION_SEED, authority.toBuffer()],
     config.orbProgramId
   );
+}
+
+// Get Config PDA (singleton)
+export function getConfigPDA(): [PublicKey, number] {
+  return PublicKey.findProgramAddressSync(
+    [CONFIG_SEED],
+    config.orbProgramId
+  );
+}
+
+// Fetch entropy var address from Config account
+export async function fetchEntropyVarAddress(): Promise<PublicKey> {
+  const connection = getConnection();
+  const [configPDA] = getConfigPDA();
+
+  const accountInfo = await connection.getAccountInfo(configPDA);
+  if (!accountInfo || accountInfo.data.length < 144) {
+    throw new Error('Config account not found or invalid');
+  }
+
+  // Config structure (from IDL):
+  // - discriminator: 8 bytes (offset 0)
+  // - admin: 32 bytes (offset 8)
+  // - bury_authority: 32 bytes (offset 40)
+  // - fee_collector: 32 bytes (offset 72)
+  // - swap_program: 32 bytes (offset 104)
+  // - var_address: 32 bytes (offset 136)
+  const varAddress = new PublicKey(accountInfo.data.slice(136, 168));
+
+  return varAddress;
 }
 
 // Check if automation account is initialized
@@ -179,21 +210,22 @@ export async function fetchMiner(authority: PublicKey): Promise<Miner | null> {
   // Parse Miner structure (based on Rust struct)
   let offset = 8; // Skip discriminator
 
+  // Per IDL: authority(32) + deployed(200) + cumulative(200) + checkpoint_fee(8) + checkpoint_id(8) + ...
   const miner: Miner = {
     authority: new PublicKey(data.slice(offset, offset + 32)),
-    deployed: deserializeU64Array25(data, offset + 32),        // 200 bytes
-    cumulative: deserializeU64Array25(data, offset + 232),     // 200 bytes
-    roundId: deserializeU64(data, offset + 432),
-    checkpointFee: deserializeU64(data, offset + 440),
-    checkpointId: deserializeU64(data, offset + 448),
-    lastClaimOreAt: deserializeU64(data, offset + 456),
-    lastClaimSolAt: deserializeU64(data, offset + 464),
-    rewardsFactor: deserializeU64(data, offset + 472),
-    rewardsSol: deserializeU64(data, offset + 480),
-    rewardsOre: deserializeU64(data, offset + 488),
-    refinedOre: deserializeU64(data, offset + 496),
-    lifetimeRewardsSol: deserializeU64(data, offset + 504),
-    lifetimeRewardsOre: deserializeU64(data, offset + 512),
+    deployed: deserializeU64Array25(data, offset + 32),        // offset 40, 200 bytes (25 * 8)
+    cumulative: deserializeU64Array25(data, offset + 232),     // offset 240, 200 bytes (25 * 8)
+    checkpointFee: deserializeU64(data, offset + 432),         // offset 440 (absolute)
+    checkpointId: deserializeU64(data, offset + 440),          // offset 448 (absolute) - PER IDL
+    lastClaimOreAt: deserializeU64(data, offset + 448),        // offset 456 (absolute), i64
+    lastClaimSolAt: deserializeU64(data, offset + 456),        // offset 464 (absolute), i64
+    rewardsFactor: deserializeU64(data, offset + 464),         // offset 472 (absolute), Numeric=16 bytes but reading first 8
+    rewardsSol: deserializeU64(data, offset + 480),            // offset 488 (absolute), skip 16 for Numeric
+    rewardsOre: deserializeU64(data, offset + 488),            // offset 496 (absolute)
+    refinedOre: deserializeU64(data, offset + 496),            // offset 504 (absolute)
+    roundId: deserializeU64(data, offset + 504),               // offset 512 (absolute) - PER IDL
+    lifetimeRewardsSol: deserializeU64(data, offset + 512),    // offset 520 (absolute)
+    lifetimeRewardsOre: deserializeU64(data, offset + 520),    // offset 528 (absolute)
   };
 
   logger.debug(`Miner: roundId=${miner.roundId.toString()}, rewardsSol=${miner.rewardsSol.toString()}, rewardsOre=${miner.rewardsOre.toString()}`);

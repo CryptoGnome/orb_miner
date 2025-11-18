@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Automated TypeScript CLI bot for ORB mining on Solana with Jupiter swap integration. ORB is a **lottery-style mining game** (not traditional proof-of-work) where miners deploy SOL to a 5x5 grid (25 squares), and a random square/miner wins the rewards each round.
+**Smart Autonomous ORB Mining Bot** - A fully automated TypeScript CLI bot for ORB mining on Solana with intelligent threshold-based operation. ORB is a **lottery-style mining game** (not traditional proof-of-work) where miners deploy SOL to a 5x5 grid (25 squares), and a random square/miner wins the rewards each round.
 
 **Key Concepts:**
 - Each round has 25 squares (0-24)
@@ -13,10 +13,18 @@ Automated TypeScript CLI bot for ORB mining on Solana with Jupiter swap integrat
 - Rewards = SOL from losing miners + ORB from motherload (vault)
 - Bot deploys to all 25 squares each round to maximize chances
 
-## Development Commands
+**Smart Bot Features:**
+- 🤖 **Fully Autonomous** - One command, zero manual intervention
+- ⚙️ **Auto-Setup** - Creates and funds automation account on first run
+- 🎯 **Smart Mining** - Deploys based on motherload threshold (profitability)
+- 💰 **Auto-Claim** - Collects rewards when thresholds are met
+- 🔄 **Auto-Swap** - Refunds automation account by swapping ORB to SOL
+- 📊 **Auto-Stake** - Optional staking of excess ORB for yield
+
+## Usage
 
 ```bash
-# Run the bot (reads BOT_ACTION from .env)
+# Run the smart autonomous bot (one command for everything)
 npm start
 
 # Development mode with auto-reload
@@ -29,19 +37,31 @@ npm run build
 npm run clean
 ```
 
+**First Run:** Bot auto-creates automation account with smart budget allocation based on current motherload.
+**Subsequent Runs:** Bot mines continuously using automation funds, auto-claims, auto-swaps, and auto-stakes based on thresholds.
+
 ## Architecture
 
 ### Entry Point
-- [src/index.ts](src/index.ts) - Simple router that reads `BOT_ACTION` from .env and dispatches to the appropriate command
+- [src/index.ts](src/index.ts) - Launches the smart autonomous bot (one entry point, no routing)
 
-### Command Layer
-Commands are standalone operations in [src/commands/](src/commands/):
+### Core Bot
+- [src/commands/smartBot.ts](src/commands/smartBot.ts) - **Main smart autonomous bot** with all automation logic:
+  - Auto-setup automation account (first run)
+  - Continuous round monitoring and deployment
+  - Auto-claim rewards (SOL + ORB)
+  - Auto-swap ORB to refund automation
+  - Auto-stake excess ORB (optional)
+  - Fully threshold-driven operation
+
+### Legacy Commands (Available for Testing)
+Legacy standalone commands in [src/commands/](src/commands/) - kept for reference/testing:
 - **query.ts** - Check balances, rewards, round info, ORB price
 - **deploy.ts** - Deploy SOL to all 25 squares once
 - **claim.ts** - Claim SOL/ORB rewards from mining and/or staking
 - **stake.ts** - Stake ORB tokens for yield
 - **swap.ts** - Swap ORB to SOL via Jupiter
-- **autoDeploy.ts** - Main automation loop (smart round management, auto-claim, auto-swap)
+- **autoDeploy.ts** - Old automation loop (replaced by smartBot.ts)
 
 ### Utilities Layer
 Core utilities in [src/utils/](src/utils/):
@@ -97,44 +117,81 @@ Jupiter API v6 is used for:
 
 The bot can auto-swap ORB to SOL when balance is low. See [jupiter.ts](src/utils/jupiter.ts) and [swap.ts](src/commands/swap.ts).
 
-## Auto-Deploy Bot Logic
+## Smart Bot Logic
 
-The [autoDeploy.ts](src/commands/autoDeploy.ts) command implements the main automation loop:
+The [smartBot.ts](src/commands/smartBot.ts) command implements the fully autonomous bot:
 
-1. **Smart Round Management**:
-   - Continuously monitors Board account for current round
+1. **Auto-Setup (First Run)**:
+   - Checks if automation account exists
+   - If not, creates automation account automatically
+   - Smart budget allocation based on current motherload:
+     - Higher motherload = fewer rounds with more SOL/round (better EV)
+     - Motherload tiers: 0-99 ORB = 100 rounds, 700+ ORB = 30 rounds
+   - Uses configurable % of wallet SOL (default 90%)
+
+2. **Smart Mining Loop**:
+   - Continuously monitors Board account for new rounds
    - Detects when round changes (new round starts)
-   - Only deploys when motherload >= threshold (configurable)
-   - Waits for new round before next deployment
+   - Only deploys when motherload >= threshold (profitability check)
+   - Executes deployment using automation account funds
+   - Tracks remaining balance and warns when low
 
-2. **SOL Balance Management**:
-   - Checks SOL balance before each deployment
-   - If SOL < MIN_SOL_FOR_DEPLOYMENT, pauses and alerts user
-   - If AUTO_SWAP_WHEN_LOW_SOL enabled, auto-swaps ORB to SOL
-   - Resumes when SOL refilled
-
-3. **Auto-Claiming**:
+3. **Auto-Claim**:
    - Periodically checks mining and staking rewards
-   - Auto-claims when rewards >= thresholds (configurable)
-   - Supports claiming SOL, ORB, or both from mining and/or staking
+   - Auto-claims SOL when >= AUTO_CLAIM_SOL_THRESHOLD
+   - Auto-claims ORB when >= AUTO_CLAIM_ORB_THRESHOLD
+   - Runs independently of mining loop
 
-4. **Transaction Handling**:
+4. **Auto-Swap (Refund Automation)**:
+   - Monitors automation account balance
+   - When balance < MIN_AUTOMATION_BALANCE, triggers swap
+   - Swaps ORB to SOL to refund automation account
+   - Keeps mining running without interruption
+   - Respects MIN_ORB_TO_KEEP safety reserve
+
+5. **Auto-Stake (Optional)**:
+   - Periodically checks ORB balance
+   - Stakes excess ORB when >= STAKE_ORB_THRESHOLD
+   - Generates passive yield while mining
+
+6. **Resilience**:
    - Retries on failure with exponential backoff
    - Logs all transactions to `logs/transactions.log`
    - Graceful shutdown on Ctrl+C
+   - Handles edge cases (already deployed, round ended, etc.)
 
 ## Configuration
 
-All bot behavior is controlled by .env variables. Key settings:
-- `BOT_ACTION`: Which command to run (query, deploy, claim, stake, swap, auto-deploy)
-- `SOL_PER_DEPLOYMENT`: Amount of SOL to deploy per round
-- `MOTHERLOAD_THRESHOLD`: Only deploy when motherload >= this value (profitability check)
-- `MIN_SOL_FOR_DEPLOYMENT`: Pause if SOL drops below this
-- `AUTO_CLAIM_ENABLED`: Enable/disable auto-claiming
-- `AUTO_SWAP_WHEN_LOW_SOL`: Enable/disable auto-swapping ORB to SOL
-- `DRY_RUN`: Simulate without sending transactions (testing)
+All bot behavior is controlled by .env variables. **Threshold-based settings** for autonomous operation:
 
-See [.env.example](.env.example) for all options.
+### Mining Thresholds
+- `MOTHERLOAD_THRESHOLD`: Only mine when motherload >= this (default: 100 ORB)
+- `CHECK_ROUND_INTERVAL_MS`: How often to check for new rounds (default: 10000ms)
+
+### Automation Account
+- `INITIAL_AUTOMATION_BUDGET_PCT`: % of wallet SOL to use for setup (default: 90%)
+- `MIN_AUTOMATION_BALANCE`: Trigger refund when balance < this (default: 0.5 SOL)
+
+### Auto-Claim Thresholds
+- `AUTO_CLAIM_SOL_THRESHOLD`: Claim SOL rewards when >= this (default: 0.1 SOL)
+- `AUTO_CLAIM_ORB_THRESHOLD`: Claim ORB rewards when >= this (default: 1.0 ORB)
+- `CHECK_REWARDS_INTERVAL_MS`: How often to check rewards (default: 300000ms / 5 min)
+
+### Auto-Swap Settings
+- `AUTO_SWAP_ENABLED`: Enable auto-swapping ORB to refund automation (default: true)
+- `SWAP_ORB_AMOUNT`: Amount of ORB to swap each time (default: 10 ORB)
+- `MIN_ORB_TO_KEEP`: Never go below this ORB balance (default: 5 ORB)
+- `SLIPPAGE_BPS`: Slippage tolerance for swaps (default: 50 bps = 0.5%)
+
+### Auto-Stake Settings (Optional)
+- `AUTO_STAKE_ENABLED`: Enable auto-staking excess ORB (default: false)
+- `STAKE_ORB_THRESHOLD`: Stake when ORB balance >= this (default: 50 ORB)
+
+### Safety Settings
+- `DRY_RUN`: Simulate without sending real transactions (default: false)
+- `MIN_SOL_BALANCE`: Minimum wallet SOL to maintain (default: 0.1 SOL)
+
+See [.env.example](.env.example) for complete configuration with comments.
 
 ## Logging
 
@@ -148,17 +205,26 @@ Winston logger writes to:
 
 When modifying the bot:
 1. Set `DRY_RUN=true` in .env to test without sending real transactions
-2. Use `BOT_ACTION=query` to inspect current state before/after changes
-3. Test with small amounts first (`SOL_PER_DEPLOYMENT=0.001`)
-4. Monitor `logs/error.log` for issues
+2. Set low thresholds for testing:
+   - `MOTHERLOAD_THRESHOLD=10` (mine even with low motherload)
+   - `INITIAL_AUTOMATION_BUDGET_PCT=10` (use small budget for testing)
+   - `AUTO_CLAIM_SOL_THRESHOLD=0.001` (claim quickly)
+3. Monitor `logs/error.log` for issues
+4. Check `logs/transactions.log` for all transaction signatures
+5. Use legacy commands for manual testing:
+   - `npx ts-node src/commands/query.ts` (check balances)
+   - `npx ts-node src/commands/claim.ts` (manual claim)
+   - `npx ts-node src/commands/swap.ts` (manual swap)
 
 ## Common Tasks
 
-### Add a new command
-1. Create new file in [src/commands/](src/commands/)
-2. Export async function (e.g., `export async function myCommand()`)
-3. Add import and case to [src/index.ts](src/index.ts) switch statement
-4. Add new BOT_ACTION value to .env
+### Modify smart bot behavior
+The bot is designed for easy customization. Common modifications:
+
+1. **Change mining strategy**: Edit [smartBot.ts:82-95](src/commands/smartBot.ts#L82-L95) `calculateTargetRounds()` function
+2. **Add new threshold check**: Add new config value, then add check in main loop
+3. **Modify auto-claim logic**: Edit [smartBot.ts:143-175](src/commands/smartBot.ts#L143-L175) `autoClaimRewards()` function
+4. **Customize auto-swap**: Edit [smartBot.ts:177-223](src/commands/smartBot.ts#L177-L223) `autoRefundAutomation()` function
 
 ### Modify instruction format
 If ORB program updates and instructions change:
@@ -175,10 +241,10 @@ If on-chain account layouts change:
 4. Test thoroughly with query command
 
 ### Add new configuration option
-1. Add to [.env.example](.env.example) with description
-2. Add to [config.ts](src/utils/config.ts) with type and default value
-3. Export from config object
-4. Use via `config.yourNewOption` in code
+1. Add to [.env.example](.env.example) with description and default value
+2. Add to Config interface in [config.ts:8-71](src/utils/config.ts#L8-L71)
+3. Add to loadConfig function in [config.ts:92-165](src/utils/config.ts#L92-L165) with getEnv/getEnvNumber/getEnvBoolean
+4. Use via `config.yourNewOption` in [smartBot.ts](src/commands/smartBot.ts)
 
 ## Project Context
 
@@ -186,4 +252,28 @@ If on-chain account layouts change:
 - **ORB Token Mint**: `orebyr4mDiPDVgnfqvF5xiu5gKnh94Szuz8dqgNqdJn`
 - **Network**: Solana mainnet-beta
 - **Based on**: ORE protocol (https://github.com/regolith-labs/ore)
-- **Status**: See [AUTOMATION-STATUS.md](AUTOMATION-STATUS.md) for current deployment status and known issues
+
+## How It Works
+
+1. **First Run**: `npm start`
+   - Bot detects no automation account exists
+   - Auto-creates account with smart budget (90% of wallet SOL by default)
+   - Budget is split across N rounds based on motherload (higher motherload = fewer, larger rounds)
+   - Starts mining immediately
+
+2. **Continuous Operation**:
+   - Monitors for new rounds every 10 seconds
+   - Deploys to all 25 squares when motherload >= threshold
+   - Auto-claims rewards every 5 minutes if thresholds met
+   - Auto-swaps ORB to SOL when automation balance low
+   - Auto-stakes excess ORB if enabled
+   - Runs until automation depleted or stopped (Ctrl+C)
+
+3. **Refunding**:
+   - When automation balance < MIN_AUTOMATION_BALANCE:
+     - Bot auto-swaps SWAP_ORB_AMOUNT ORB to SOL
+     - Refunds automation account (TODO: transfer to PDA)
+     - Continues mining without interruption
+   - Manual refund: Transfer SOL to automation PDA address
+
+**The bot is fully autonomous - just set thresholds in .env and run `npm start`!**

@@ -24,7 +24,15 @@ export interface Config {
   checkRoundIntervalMs: number;
   minSolForDeployment: number;
 
-  // Claim Settings
+  // Smart Bot - Automation Account Settings
+  initialAutomationBudgetPct: number;
+  minAutomationBalance: number;
+
+  // Smart Bot - Auto-Claim Thresholds
+  autoClaimSolThreshold: number;
+  autoClaimOrbThreshold: number;
+
+  // Claim Settings (legacy - for backward compatibility)
   autoClaimEnabled: boolean;
   claimThresholdSol: number;
   claimThresholdOrb: number;
@@ -33,14 +41,21 @@ export interface Config {
   claimFromStaking: boolean;
   checkRewardsIntervalMs: number;
 
-  // Auto-Deploy Settings
+  // Smart Bot - Auto-Swap Settings
+  autoSwapEnabled: boolean;
+
+  // Smart Bot - Auto-Stake Settings
+  autoStakeEnabled: boolean;
+  stakeOrbThreshold: number;
+
+  // Auto-Deploy Settings (legacy)
   autoDeployIterations: number;
   deployMaxRetries: number;
   smartRoundManagement: boolean;
   pauseIfLowSol: boolean;
   resumeNextRound: boolean;
 
-  // Jupiter Integration
+  // Jupiter Integration (legacy)
   enableJupiterSwap: boolean;
   autoSwapWhenLowSol: boolean;
   swapOrbAmount: number;
@@ -92,10 +107,18 @@ export function loadConfig(): Config {
       deployStrategy: getEnv('DEPLOY_STRATEGY', 'all'),
       solPerDeployment: getEnvNumber('SOL_PER_DEPLOYMENT', 0.01),
       motherloadThreshold: getEnvNumber('MOTHERLOAD_THRESHOLD', 50),
-      checkRoundIntervalMs: getEnvNumber('CHECK_ROUND_INTERVAL_MS', 30000),
+      checkRoundIntervalMs: getEnvNumber('CHECK_ROUND_INTERVAL_MS', 10000),
       minSolForDeployment: getEnvNumber('MIN_SOL_FOR_DEPLOYMENT', 0.3),
 
-      // Claim Settings
+      // Smart Bot - Automation Account Settings
+      initialAutomationBudgetPct: getEnvNumber('INITIAL_AUTOMATION_BUDGET_PCT', 90),
+      minAutomationBalance: getEnvNumber('MIN_AUTOMATION_BALANCE', 0.5),
+
+      // Smart Bot - Auto-Claim Thresholds
+      autoClaimSolThreshold: getEnvNumber('AUTO_CLAIM_SOL_THRESHOLD', 0.1),
+      autoClaimOrbThreshold: getEnvNumber('AUTO_CLAIM_ORB_THRESHOLD', 1.0),
+
+      // Claim Settings (legacy - for backward compatibility)
       autoClaimEnabled: getEnvBoolean('AUTO_CLAIM_ENABLED', true),
       claimThresholdSol: getEnvNumber('CLAIM_THRESHOLD_SOL', 1.0),
       claimThresholdOrb: getEnvNumber('CLAIM_THRESHOLD_ORB', 100),
@@ -104,18 +127,25 @@ export function loadConfig(): Config {
       claimFromStaking: getEnvBoolean('CLAIM_FROM_STAKING', true),
       checkRewardsIntervalMs: getEnvNumber('CHECK_REWARDS_INTERVAL_MS', 300000),
 
-      // Auto-Deploy Settings
+      // Smart Bot - Auto-Swap Settings
+      autoSwapEnabled: getEnvBoolean('AUTO_SWAP_ENABLED', true),
+
+      // Smart Bot - Auto-Stake Settings
+      autoStakeEnabled: getEnvBoolean('AUTO_STAKE_ENABLED', false),
+      stakeOrbThreshold: getEnvNumber('STAKE_ORB_THRESHOLD', 50),
+
+      // Auto-Deploy Settings (legacy)
       autoDeployIterations: getEnvNumber('AUTO_DEPLOY_ITERATIONS', 0),
       deployMaxRetries: getEnvNumber('DEPLOY_MAX_RETRIES', 3),
       smartRoundManagement: getEnvBoolean('SMART_ROUND_MANAGEMENT', true),
       pauseIfLowSol: getEnvBoolean('PAUSE_IF_LOW_SOL', true),
       resumeNextRound: getEnvBoolean('RESUME_NEXT_ROUND', true),
 
-      // Jupiter Integration
+      // Jupiter Integration (legacy)
       enableJupiterSwap: getEnvBoolean('ENABLE_JUPITER_SWAP', true),
       autoSwapWhenLowSol: getEnvBoolean('AUTO_SWAP_WHEN_LOW_SOL', true),
-      swapOrbAmount: getEnvNumber('SWAP_ORB_AMOUNT', 50),
-      minOrbToKeep: getEnvNumber('MIN_ORB_TO_KEEP', 100),
+      swapOrbAmount: getEnvNumber('SWAP_ORB_AMOUNT', 10),
+      minOrbToKeep: getEnvNumber('MIN_ORB_TO_KEEP', 5),
       slippageBps: getEnvNumber('SLIPPAGE_BPS', 50),
       jupiterApiUrl: getEnv('JUPITER_API_URL', 'https://quote-api.jup.ag/v6'),
 
