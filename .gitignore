@@ -10,8 +10,8 @@ yarn.lock
 dist/
 build/
 
-# Logs
-logs/*.log
+# Logs (entire directory and all log files)
+logs/
 *.log
 
 # IDE

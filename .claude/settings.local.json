@@ -10,7 +10,10 @@
       "Bash(echo:*)",
       "Bash(curl:*)",
       "Bash(cat:*)",
-      "Bash(test:*)"
+      "Bash(test:*)",
+      "Bash(git rev-list:*)",
+      "Bash(git cat-file:*)",
+      "Bash(git ls-tree:*)"
     ],
     "deny": [],
     "ask": []
