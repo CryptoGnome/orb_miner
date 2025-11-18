@@ -623,20 +623,8 @@ async function autoMineRound(automationInfo: any): Promise<boolean> {
   try {
     // Check if we have enough balance for this round
     if (automationInfo.balance < automationInfo.costPerRound) {
-      ui.warning('Budget depleted - closing automation account...');
-      logger.debug(`Need: ${(automationInfo.costPerRound / 1e9).toFixed(4)} SOL, Have: ${(automationInfo.balance / 1e9).toFixed(6)} SOL`);
-
-      // Close automation account to reclaim remaining SOL
-      try {
-        const closeInstruction = buildCloseAutomationInstruction();
-        const closeSig = await sendAndConfirmTransaction([closeInstruction], 'Close Automation');
-        logger.debug(`Automation account closed: ${closeSig}`);
-        ui.success('SOL reclaimed to wallet - will recreate automation on next cycle');
-      } catch (closeError) {
-        logger.error('Failed to close automation account:', closeError);
-      }
-
-      return false; // Signal that automation needs to be recreated
+      logger.debug(`Budget depleted: Need ${(automationInfo.costPerRound / 1e9).toFixed(4)} SOL, Have ${(automationInfo.balance / 1e9).toFixed(6)} SOL`);
+      return false; // Signal that automation needs to be recreated (will be handled in main loop)
     }
 
     // Get current board state
@@ -916,19 +904,11 @@ export async function smartBotCommand(): Promise<void> {
     // Step 2: Main autonomous loop
     let lastRoundId = '';
     let deployedRounds = 0;
+    let shouldCloseAutomation = false; // Flag to close automation after periodic operations
 
     while (isRunning) {
       try {
-        // Auto-claim rewards periodically
-        await autoClaimRewards();
-
-        // Auto-stake excess ORB periodically
-        await autoStakeOrb();
-
-        // Auto-sell ORB when balance is high (periodic check)
-        await autoSwapCheck();
-
-        // Get current round
+        // Get current round FIRST (priority: detect new rounds quickly)
         const board = await fetchBoard();
         const currentRoundId = board.roundId.toString();
 
@@ -990,7 +970,7 @@ export async function smartBotCommand(): Promise<void> {
             ui.status('Per Round', `${solPerRound.toFixed(4)} SOL`);
           }
 
-          // Auto-mine the new round
+          // PRIORITY: Auto-mine the new round FIRST (before slow operations)
           const deployed = await autoMineRound(automationInfo);
 
           if (deployed) {
@@ -1007,19 +987,50 @@ export async function smartBotCommand(): Promise<void> {
               if (remainingRounds < 5 && remainingRounds > 0) {
                 ui.warning(`Only ${remainingRounds} rounds remaining!`);
               } else if (remainingRounds === 0) {
-                ui.warning('Budget depleted - closing automation account...');
-                try {
-                  const closeInstruction = buildCloseAutomationInstruction();
-                  const closeSig = await sendAndConfirmTransaction([closeInstruction], 'Close Automation');
-                  logger.debug(`Automation account closed: ${closeSig}`);
-                  ui.success('SOL reclaimed - will recreate automation on next round');
-                } catch (closeError) {
-                  logger.error('Failed to close automation account:', closeError);
-                }
-                // Continue to next iteration - bot will recreate automation
+                // Mark for closure after periodic operations (don't block next round)
+                shouldCloseAutomation = true;
+                ui.warning('Budget depleted - will close automation after cleanup');
               }
             }
             ui.blank();
+          }
+        }
+
+        // AFTER deployment: Do periodic operations (claims, swaps, stakes)
+        // These are slower and less time-sensitive than deployment
+        // Skip these if budget is critically low (< 2 rounds) to prioritize deployment speed
+        const currentInfo = await getAutomationInfo();
+        if (currentInfo) {
+          const remainingRounds = Math.floor(currentInfo.balance / currentInfo.costPerRound);
+
+          if (remainingRounds >= 2) {
+            // Normal operations: do claims, stakes, and swaps
+            await autoClaimRewards();
+            await autoStakeOrb();
+            await autoSwapCheck();
+          } else {
+            // Critical budget: skip slow operations to avoid missing deployments
+            logger.debug(`Skipping slow operations (${remainingRounds} rounds remaining)`);
+          }
+        } else {
+          // No automation account (will recreate on next round)
+          // Still do periodic operations since we're not deploying
+          await autoClaimRewards();
+          await autoStakeOrb();
+          await autoSwapCheck();
+        }
+
+        // Close automation if flagged (happens after all operations, no rush)
+        if (shouldCloseAutomation) {
+          try {
+            const closeInstruction = buildCloseAutomationInstruction();
+            const closeSig = await sendAndConfirmTransaction([closeInstruction], 'Close Automation');
+            logger.debug(`Automation account closed: ${closeSig}`);
+            ui.success('SOL reclaimed - will recreate automation on next round');
+            shouldCloseAutomation = false; // Reset flag
+          } catch (closeError) {
+            logger.error('Failed to close automation account:', closeError);
+            shouldCloseAutomation = false; // Reset flag to avoid retry loop
           }
         }
 
