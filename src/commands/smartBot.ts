@@ -525,17 +525,31 @@ async function restartAutomationForScaling(): Promise<boolean> {
 }
 
 /**
- * Auto-swap: Refund automation account by swapping ORB to SOL when balance is low
+ * Auto-swap: Swap ORB to SOL based on two triggers:
+ * 1. Safety: Automation balance is low (refunds automation account)
+ * 2. Proactive: Wallet ORB balance is high (keeps SOL in wallet for selling)
  */
 async function autoRefundAutomation(automationInfo: any): Promise<boolean> {
   try {
-    // Check if automation balance is below threshold
+    // Check if automation balance is below threshold (safety trigger)
     const balanceSol = automationInfo.balance / 1e9;
-    if (balanceSol >= config.minAutomationBalance) {
-      return true; // Balance is sufficient
+    const needsRefund = balanceSol < config.minAutomationBalance;
+
+    // Check if wallet ORB balance is high (proactive selling trigger)
+    const balances = await getBalances();
+    const shouldSellOrb = balances.orb >= config.walletOrbSwapThreshold;
+
+    // If neither trigger is met, we're good
+    if (!needsRefund && !shouldSellOrb) {
+      return true;
     }
 
-    ui.warning(`Budget low: ${balanceSol.toFixed(4)} SOL - refunding...`);
+    // Determine reason for swap
+    if (needsRefund) {
+      ui.warning(`Budget low: ${balanceSol.toFixed(4)} SOL - refunding...`);
+    } else {
+      ui.info(`Wallet ORB balance: ${balances.orb.toFixed(2)} ORB - selling...`);
+    }
 
     if (!config.autoSwapEnabled) {
       ui.error('Auto-swap disabled - manual refund required');
@@ -543,8 +557,7 @@ async function autoRefundAutomation(automationInfo: any): Promise<boolean> {
       return false;
     }
 
-    // Get total ORB balance
-    const balances = await getBalances();
+    // Calculate how much ORB to swap
     const orbToSwap = Math.max(0, balances.orb - config.minOrbToKeep);
 
     if (orbToSwap < config.minOrbSwapAmount) {
@@ -578,61 +591,68 @@ async function autoRefundAutomation(automationInfo: any): Promise<boolean> {
     if (result.success && result.solReceived) {
       ui.success(`Received ${result.solReceived.toFixed(4)} SOL from swap`);
 
-      // Transfer SOL to automation PDA
-      const wallet = getWallet();
-      const [automationPDA] = getAutomationPDA(wallet.publicKey);
-      const transferAmount = Math.floor(result.solReceived * LAMPORTS_PER_SOL);
+      // Only transfer to automation if it was triggered by low balance
+      // If triggered by high wallet ORB, keep SOL in wallet
+      if (needsRefund) {
+        const wallet = getWallet();
+        const [automationPDA] = getAutomationPDA(wallet.publicKey);
+        const transferAmount = Math.floor(result.solReceived * LAMPORTS_PER_SOL);
 
-      logger.debug(`Transferring ${result.solReceived.toFixed(4)} SOL to automation account...`);
+        logger.debug(`Transferring ${result.solReceived.toFixed(4)} SOL to automation account...`);
 
-      const transferInstruction = SystemProgram.transfer({
-        fromPubkey: wallet.publicKey,
-        toPubkey: automationPDA,
-        lamports: transferAmount,
-      });
+        const transferInstruction = SystemProgram.transfer({
+          fromPubkey: wallet.publicKey,
+          toPubkey: automationPDA,
+          lamports: transferAmount,
+        });
 
-      if (!config.dryRun) {
-        const signature = await sendAndConfirmTransaction([transferInstruction], 'Refund Automation');
-        logger.debug(`Transfer completed: ${signature}`);
+        if (!config.dryRun) {
+          const signature = await sendAndConfirmTransaction([transferInstruction], 'Refund Automation');
+          logger.debug(`Transfer completed: ${signature}`);
 
-        // Wait a moment and re-check if automation balance actually updated
-        await new Promise(resolve => setTimeout(resolve, 2000));
-        const updatedInfo = await getAutomationInfo();
+          // Wait a moment and re-check if automation balance actually updated
+          await new Promise(resolve => setTimeout(resolve, 2000));
+          const updatedInfo = await getAutomationInfo();
 
-        if (!updatedInfo) {
-          logger.error('❌ Failed to fetch updated automation info');
-          return false;
-        }
-
-        const updatedBalanceSol = updatedInfo.balance / 1e9;
-        logger.debug(`Automation balance after transfer: ${updatedBalanceSol.toFixed(6)} SOL`);
-
-        // Check if balance actually increased
-        if (updatedBalanceSol < balanceSol + (result.solReceived * 0.5)) {
-          logger.warn('⚠️  Transfer succeeded but automation balance did not update!');
-          logger.warn('💡 ORB program tracks balance internally - direct transfers don\'t work.');
-          ui.info('Closing and recreating automation account...');
-
-          // Close automation account to reclaim SOL
-          const closeInstruction = buildCloseAutomationInstruction();
-          try {
-            const closeSig = await sendAndConfirmTransaction([closeInstruction], 'Close Automation');
-            logger.debug(`Automation account closed: ${closeSig}`);
-            ui.success('SOL reclaimed to wallet - bot will recreate automation on next cycle');
-
-            // Return false to stop deployment attempts - bot will recreate automation next round
-            return false;
-          } catch (closeError) {
-            logger.error('❌ Failed to close automation account:', closeError);
-            logger.warn('💡 Bot will continue trying. May need manual intervention.');
+          if (!updatedInfo) {
+            logger.error('❌ Failed to fetch updated automation info');
             return false;
           }
-        }
 
-        ui.success(`Automation refunded - balance now ${updatedBalanceSol.toFixed(4)} SOL`);
-        return true;
+          const updatedBalanceSol = updatedInfo.balance / 1e9;
+          logger.debug(`Automation balance after transfer: ${updatedBalanceSol.toFixed(6)} SOL`);
+
+          // Check if balance actually increased
+          if (updatedBalanceSol < balanceSol + (result.solReceived * 0.5)) {
+            logger.warn('⚠️  Transfer succeeded but automation balance did not update!');
+            logger.warn('💡 ORB program tracks balance internally - direct transfers don\'t work.');
+            ui.info('Closing and recreating automation account...');
+
+            // Close automation account to reclaim SOL
+            const closeInstruction = buildCloseAutomationInstruction();
+            try {
+              const closeSig = await sendAndConfirmTransaction([closeInstruction], 'Close Automation');
+              logger.debug(`Automation account closed: ${closeSig}`);
+              ui.success('SOL reclaimed to wallet - bot will recreate automation on next cycle');
+
+              // Return false to stop deployment attempts - bot will recreate automation next round
+              return false;
+            } catch (closeError) {
+              logger.error('❌ Failed to close automation account:', closeError);
+              logger.warn('💡 Bot will continue trying. May need manual intervention.');
+              return false;
+            }
+          }
+
+          ui.success(`Automation refunded - balance now ${updatedBalanceSol.toFixed(4)} SOL`);
+          return true;
+        } else {
+          logger.info('[DRY RUN] Would transfer SOL to automation account');
+          return true;
+        }
       } else {
-        logger.info('[DRY RUN] Would transfer SOL to automation account');
+        // Swap triggered by high wallet ORB - keep SOL in wallet
+        ui.success(`SOL kept in wallet (swap triggered by high ORB balance)`);
         return true;
       }
     } else {

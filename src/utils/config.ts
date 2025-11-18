@@ -49,6 +49,7 @@ export interface Config {
 
   // Smart Bot - Auto-Swap Settings
   autoSwapEnabled: boolean;
+  walletOrbSwapThreshold: number; // Swap when wallet ORB >= this (independent trigger)
   minOrbPriceUsd: number;
 
   // Smart Bot - Auto-Stake Settings
@@ -143,6 +144,7 @@ export function loadConfig(): Config {
 
       // Smart Bot - Auto-Swap Settings
       autoSwapEnabled: getEnvBoolean('AUTO_SWAP_ENABLED', true),
+      walletOrbSwapThreshold: getEnvNumber('WALLET_ORB_SWAP_THRESHOLD', 0.1),
       minOrbPriceUsd: getEnvNumber('MIN_ORB_PRICE_USD', 0),
 
       // Smart Bot - Auto-Stake Settings
