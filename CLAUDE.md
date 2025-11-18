@@ -9,14 +9,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 **Key Concepts:**
 - Each round has 25 squares (0-24)
 - Miners deploy SOL to squares to participate
-- Random square wins at round end
+- Random square wins at round end (1 in 625 chance per deployment, each turn independent)
 - Rewards = SOL from losing miners + ORB from motherload (vault)
-- Bot deploys to all 25 squares each round to maximize chances
+- Bot deploys to all 25 squares each round to maximize chances (25 entries per round)
 
 **Smart Bot Features:**
 - 🤖 **Fully Autonomous** - One command, zero manual intervention
 - ⚙️ **Auto-Setup** - Creates and funds automation account on first run
 - 🎯 **Smart Mining** - Deploys based on motherload threshold (profitability)
+- 📈 **Dynamic Scaling** - Automatically adjusts deployment amounts as motherload grows/shrinks
+- 🔄 **Auto-Restart** - Recreates automation with optimal amounts when motherload changes significantly
 - 💰 **Auto-Claim** - Collects rewards when thresholds are met
 - 🔄 **Auto-Swap** - Refunds automation account by swapping ORB to SOL
 - 📊 **Auto-Stake** - Optional staking of excess ORB for yield
@@ -148,9 +150,17 @@ The [smartBot.ts](src/commands/smartBot.ts) command implements the fully autonom
      - Motherload tiers: 0-99 ORB = 100 rounds, 700+ ORB = 30 rounds
    - Uses configurable % of wallet SOL (default 90%)
 
-2. **Smart Mining Loop**:
+2. **Smart Mining Loop with Dynamic Scaling**:
    - Continuously monitors Board account for new rounds
    - Detects when round changes (new round starts)
+   - **Dynamic Deployment Amounts**: Automatically scales deployment based on motherload
+     - Higher motherload = larger deployments (better EV)
+     - Motherload tiers: 200-299 ORB (120 rounds), 300-399 (100 rounds), 400-499 (80 rounds), 500-599 (60 rounds), 600-699 (45 rounds), 700-999 (30 rounds), 1000+ (20 rounds)
+     - More ORB in motherload = fewer rounds with bigger bets = maximize EV
+   - **Auto-Restart for Scaling**: Automatically closes and recreates automation when motherload changes significantly
+     - Triggers on 50%+ increase (≥100 ORB change) to deploy more when rewards grow
+     - Triggers on 40%+ decrease (≥100 ORB change) to reduce risk when rewards shrink
+     - Seamlessly adapts to market conditions without manual intervention
    - Only deploys when motherload >= threshold (profitability check)
    - Executes deployment using automation account funds
    - Tracks remaining balance and warns when low
@@ -405,8 +415,11 @@ If automation account has issues:
 
 ### Cost Optimization
 - Higher `MOTHERLOAD_THRESHOLD` = fewer rounds mined, lower costs, better EV
+- **Dynamic Scaling**: Bot automatically deploys more when motherload is high (maximizes EV)
+- **Auto-Restart**: Bot recreates automation when motherload changes significantly (stays optimal)
 - `INITIAL_AUTOMATION_BUDGET_PCT` determines how long bot runs before needing refund
 - Auto-swap keeps bot running but incurs swap fees (Jupiter ~0.5%)
+- Trade-off: Larger deployments = higher risk but better rewards when motherload is high
 
 ### Limitations
 - No public IDL means program changes require reverse-engineering
@@ -421,10 +434,14 @@ If automation account has issues:
    - Budget is split across N rounds based on motherload (higher motherload = fewer, larger rounds)
    - Starts mining immediately
 
-2. **Continuous Operation**:
+2. **Continuous Operation with Dynamic Scaling**:
    - Monitors for new rounds every 10 seconds
+   - **Checks motherload changes**: Compares current vs setup motherload each round
+   - **Auto-restarts if needed**: When motherload grows 50%+ or shrinks 40%+ (≥100 ORB change)
+     - Closes current automation and recreates with optimal amounts
+     - Example: 300 ORB at setup → 500 ORB now = auto-restart with 67% larger deployments
    - Deploys to all 25 squares when motherload >= threshold
-   - Auto-claims rewards every 5 minutes if thresholds met
+   - Auto-claims rewards every 30 seconds if thresholds met
    - Auto-swaps ORB to SOL when automation balance low
    - Auto-stakes excess ORB if enabled
    - Runs until automation depleted or stopped (Ctrl+C)

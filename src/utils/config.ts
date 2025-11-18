@@ -24,6 +24,11 @@ export interface Config {
   checkRoundIntervalMs: number;
   minSolForDeployment: number;
 
+  // Production Cost Analysis
+  enableProductionCostCheck: boolean;
+  minExpectedValue: number;
+  estimatedCompetitionMultiplier: number;
+
   // Smart Bot - Automation Account Settings
   initialAutomationBudgetPct: number;
   minAutomationBalance: number;
@@ -44,6 +49,7 @@ export interface Config {
 
   // Smart Bot - Auto-Swap Settings
   autoSwapEnabled: boolean;
+  minOrbPriceUsd: number;
 
   // Smart Bot - Auto-Stake Settings
   autoStakeEnabled: boolean;
@@ -61,6 +67,7 @@ export interface Config {
   autoSwapWhenLowSol: boolean;
   swapOrbAmount: number;
   minOrbToKeep: number;
+  minOrbSwapAmount: number;
   slippageBps: number;
   jupiterApiUrl: string;
 
@@ -111,6 +118,11 @@ export function loadConfig(): Config {
       checkRoundIntervalMs: getEnvNumber('CHECK_ROUND_INTERVAL_MS', 10000),
       minSolForDeployment: getEnvNumber('MIN_SOL_FOR_DEPLOYMENT', 0.3),
 
+      // Production Cost Analysis
+      enableProductionCostCheck: getEnvBoolean('ENABLE_PRODUCTION_COST_CHECK', true),
+      minExpectedValue: getEnvNumber('MIN_EXPECTED_VALUE', 0),
+      estimatedCompetitionMultiplier: getEnvNumber('ESTIMATED_COMPETITION_MULTIPLIER', 10),
+
       // Smart Bot - Automation Account Settings
       initialAutomationBudgetPct: getEnvNumber('INITIAL_AUTOMATION_BUDGET_PCT', 90),
       minAutomationBalance: getEnvNumber('MIN_AUTOMATION_BALANCE', 0.5),
@@ -131,6 +143,7 @@ export function loadConfig(): Config {
 
       // Smart Bot - Auto-Swap Settings
       autoSwapEnabled: getEnvBoolean('AUTO_SWAP_ENABLED', true),
+      minOrbPriceUsd: getEnvNumber('MIN_ORB_PRICE_USD', 0),
 
       // Smart Bot - Auto-Stake Settings
       autoStakeEnabled: getEnvBoolean('AUTO_STAKE_ENABLED', false),
@@ -148,6 +161,7 @@ export function loadConfig(): Config {
       autoSwapWhenLowSol: getEnvBoolean('AUTO_SWAP_WHEN_LOW_SOL', true),
       swapOrbAmount: getEnvNumber('SWAP_ORB_AMOUNT', 10),
       minOrbToKeep: getEnvNumber('MIN_ORB_TO_KEEP', 5),
+      minOrbSwapAmount: getEnvNumber('MIN_ORB_SWAP_AMOUNT', 0.1),
       slippageBps: getEnvNumber('SLIPPAGE_BPS', 50),
       jupiterApiUrl: getEnv('JUPITER_API_URL', 'https://quote-api.jup.ag/v6'),
 

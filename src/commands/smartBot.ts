@@ -18,7 +18,7 @@ import {
   AutomationStrategy
 } from '../utils/program';
 import { getConnection, getCurrentSlot } from '../utils/solana';
-import { swapOrbToSol } from '../utils/jupiter';
+import { swapOrbToSol, getOrbPrice } from '../utils/jupiter';
 import { config } from '../utils/config';
 import { sleep } from '../utils/retry';
 import { TransactionInstruction, SystemProgram, LAMPORTS_PER_SOL, PublicKey } from '@solana/web3.js';
@@ -43,6 +43,7 @@ let signalHandlersRegistered = false;
 let lastRewardsCheck = 0;
 let lastStakeCheck = 0;
 let lastSwapCheck = 0;
+let setupMotherload = 0; // Track motherload at automation setup time for dynamic scaling
 
 // Setup graceful shutdown
 function setupSignalHandlers() {
@@ -64,28 +65,204 @@ function setupSignalHandlers() {
 }
 
 /**
- * Calculate optimal rounds based on motherload (conservative lottery EV optimization)
- * Strategy:
+ * Calculate optimal rounds based on motherload (dynamic EV optimization)
+ * Strategy: As motherload grows, deploy MORE per round (fewer total rounds, higher amount per square)
+ * This maximizes EV when rewards are high.
+ *
+ * Tiers:
  * - 0-199 ORB: Don't mine (below minimum threshold)
- * - 200-399 ORB: Conservative (100 rounds)
- * - 400-499 ORB: Start getting aggressive (90 rounds)
- * - 500-599 ORB: More aggressive (80 rounds)
- * - 600-699 ORB: Very aggressive (70 rounds)
- * - 700+ ORB: Maximum aggression (continues reducing to min 30)
+ * - 200-299 ORB: Very conservative (120 rounds, small amounts)
+ * - 300-399 ORB: Conservative (100 rounds)
+ * - 400-499 ORB: Moderate (80 rounds)
+ * - 500-599 ORB: Aggressive (60 rounds)
+ * - 600-699 ORB: Very aggressive (45 rounds)
+ * - 700-999 ORB: Maximum aggression (30 rounds)
+ * - 1000+ ORB: Ultra aggressive (20 rounds, very large amounts)
  */
 function calculateTargetRounds(motherloadOrb: number): number {
-  const baseRounds = 100;
-
-  // Don't reduce rounds until motherload >= 400
-  if (motherloadOrb < 400) {
-    return baseRounds; // Conservative: 100 rounds
+  // Ultra aggressive for massive motherloads (1000+ ORB)
+  if (motherloadOrb >= 1000) {
+    return 20; // 5% of budget per round - huge bets on huge rewards
   }
 
-  // Start reducing rounds from 400 ORB onwards
-  // Tier 4 (400-499) = 90 rounds, Tier 5 (500-599) = 80 rounds, etc.
-  const motherloadTier = Math.floor(motherloadOrb / 100);
-  const reduction = (motherloadTier - 4) * 10; // Start reduction at tier 4
-  return Math.max(30, baseRounds - reduction);
+  // Maximum aggression (700-999 ORB)
+  if (motherloadOrb >= 700) {
+    return 30; // ~3.3% of budget per round
+  }
+
+  // Very aggressive (600-699 ORB)
+  if (motherloadOrb >= 600) {
+    return 45; // ~2.2% of budget per round
+  }
+
+  // Aggressive (500-599 ORB)
+  if (motherloadOrb >= 500) {
+    return 60; // ~1.67% of budget per round
+  }
+
+  // Moderate (400-499 ORB)
+  if (motherloadOrb >= 400) {
+    return 80; // ~1.25% of budget per round
+  }
+
+  // Conservative (300-399 ORB)
+  if (motherloadOrb >= 300) {
+    return 100; // 1% of budget per round
+  }
+
+  // Very conservative (200-299 ORB)
+  return 120; // ~0.83% of budget per round - small bets on small rewards
+}
+
+/**
+ * Calculate expected ORB rewards per round based on mining mechanics
+ *
+ * Per Round Rewards:
+ * - Base: +4 ORB minted per round (split among winners on winning block)
+ *   - 50% of time: split proportionally among all winners
+ *   - 50% of time: one winner gets all 4 ORB (weighted random)
+ * - Motherload: +0.8 ORB added per round, 1/625 chance to hit
+ *   - When hit: split proportionally among winners
+ * - Refining Fee: 10% on claimed rewards (redistributed to holders)
+ *
+ * @param motherloadOrb Current motherload size in ORB
+ * @param ourSquares Number of squares we're deploying to (typically 25)
+ * @param estimatedCompetitionMultiplier Estimated competition level (1 = just us, 2 = double competition, etc.)
+ * @returns Expected ORB rewards before refining fee
+ */
+function calculateExpectedOrbRewards(
+  motherloadOrb: number,
+  ourSquares: number = 25,
+  estimatedCompetitionMultiplier: number = 10 // Conservative estimate: assume 10x our deployment
+): number {
+  // Our chance of having the winning block (assuming equal deployment across squares)
+  // If we deploy to all 25 squares and competition is 10x, we have ~9% of total deployment
+  const ourShareOfTotal = ourSquares / (ourSquares * estimatedCompetitionMultiplier);
+
+  // Base reward: 4 ORB per round
+  // 50% split proportionally, 50% winner-takes-all (weighted random)
+  // Expected value = 0.5 × (our_share × 4) + 0.5 × (our_share × 4) = our_share × 4
+  const baseRewardExpected = ourShareOfTotal * 4;
+
+  // Motherload reward: 1/625 chance to hit, split proportionally if we're on winning block
+  const motherloadChance = 1 / 625;
+  const motherloadExpected = motherloadChance * ourShareOfTotal * motherloadOrb;
+
+  // Total expected ORB (before 10% refining fee)
+  const totalExpected = baseRewardExpected + motherloadExpected;
+
+  // After 10% refining fee (we lose 10% when claiming)
+  const afterRefining = totalExpected * 0.9;
+
+  return afterRefining;
+}
+
+/**
+ * Calculate expected SOL returns from losing blocks
+ *
+ * When we win, we get SOL from all losing blocks split proportionally.
+ * This is difficult to estimate without knowing total deployment patterns.
+ *
+ * @param ourDeploymentSol SOL we're deploying
+ * @param _estimatedTotalDeployment Estimated total SOL deployed by all miners (for future use)
+ * @returns Expected SOL returned (very rough estimate)
+ */
+function calculateExpectedSolReturns(
+  ourDeploymentSol: number,
+  _estimatedTotalDeployment: number
+): number {
+  // If we deploy X SOL and win, we get back:
+  // - Our X SOL (on losing blocks)
+  // - Share of other miners' SOL on losing blocks
+  //
+  // Very rough estimate: if total deployment is Y and we have X/Y share,
+  // we expect to get back approximately our share of the pot when we win
+  //
+  // This is highly variable and depends on competition patterns
+  // For safety, assume we break even on SOL (conservative)
+
+  return ourDeploymentSol * 0.95; // Assume we get 95% of our SOL back on average
+}
+
+/**
+ * Check if mining is profitable based on production cost analysis
+ *
+ * EV = (Expected ORB × ORB Price in SOL) + Expected SOL Back - Production Cost
+ *
+ * @param costPerRound SOL deployed per round (production cost)
+ * @param motherloadOrb Current motherload in ORB
+ * @returns Object with profitability info
+ */
+async function isProfitableToMine(
+  costPerRound: number,
+  motherloadOrb: number
+): Promise<{
+  profitable: boolean;
+  expectedValue: number;
+  productionCost: number;
+  expectedReturns: number;
+  orbPrice: number;
+  breakdownMessage: string;
+}> {
+  try {
+    // Get current ORB price in SOL
+    const { priceInSol: orbPrice } = await getOrbPrice();
+
+    if (orbPrice === 0) {
+      logger.warn('⚠️  Could not fetch ORB price, assuming not profitable');
+      return {
+        profitable: false,
+        expectedValue: 0,
+        productionCost: costPerRound,
+        expectedReturns: 0,
+        orbPrice: 0,
+        breakdownMessage: 'ORB price unavailable',
+      };
+    }
+
+    // Calculate expected rewards (use config's competition multiplier)
+    const competitionMultiplier = config.estimatedCompetitionMultiplier || 10;
+    const expectedOrbRewards = calculateExpectedOrbRewards(motherloadOrb, 25, competitionMultiplier);
+    const expectedSolBack = calculateExpectedSolReturns(costPerRound, costPerRound * competitionMultiplier);
+
+    // Calculate expected value in SOL
+    const orbRewardValueInSol = expectedOrbRewards * orbPrice;
+    const totalExpectedReturns = orbRewardValueInSol + expectedSolBack;
+    const expectedValue = totalExpectedReturns - costPerRound;
+
+    // Mining is profitable if EV > 0 (or above minimum threshold from config)
+    const minEV = config.minExpectedValue || 0; // Add config option for minimum EV
+    const profitable = expectedValue >= minEV;
+
+    // Build breakdown message
+    const breakdownMessage = [
+      `Production Cost: ${costPerRound.toFixed(6)} SOL`,
+      `Expected ORB: ${expectedOrbRewards.toFixed(4)} ORB × ${orbPrice.toFixed(6)} SOL = ${orbRewardValueInSol.toFixed(6)} SOL`,
+      `Expected SOL Back: ${expectedSolBack.toFixed(6)} SOL`,
+      `Total Expected Returns: ${totalExpectedReturns.toFixed(6)} SOL`,
+      `Expected Value (EV): ${expectedValue >= 0 ? '+' : ''}${expectedValue.toFixed(6)} SOL`,
+      `Profitable: ${profitable ? '✅ YES' : '❌ NO'}`,
+    ].join('\n  ');
+
+    return {
+      profitable,
+      expectedValue,
+      productionCost: costPerRound,
+      expectedReturns: totalExpectedReturns,
+      orbPrice,
+      breakdownMessage,
+    };
+  } catch (error) {
+    logger.error('Failed to calculate profitability:', error);
+    return {
+      profitable: false,
+      expectedValue: 0,
+      productionCost: costPerRound,
+      expectedReturns: 0,
+      orbPrice: 0,
+      breakdownMessage: 'Calculation error',
+    };
+  }
 }
 
 /**
@@ -177,6 +354,10 @@ async function autoSetupAutomation(): Promise<boolean> {
     logger.info('✅ Automation account created successfully!');
     logger.info(`Transaction: ${signature}`);
     logger.info(`Will run for approximately ${targetRounds} rounds`);
+
+    // Track setup motherload for dynamic scaling
+    setupMotherload = motherloadOrb;
+    logger.info(`📊 Tracking setup motherload: ${setupMotherload.toFixed(2)} ORB`);
 
     return true;
   } catch (error) {
@@ -287,6 +468,81 @@ function buildCloseAutomationInstruction(): TransactionInstruction {
 }
 
 /**
+ * Check if automation should be restarted based on motherload changes
+ * Returns true if restart is recommended
+ */
+async function shouldRestartAutomation(currentMotherload: number): Promise<boolean> {
+  // No restart if we don't have a tracked setup motherload yet
+  if (setupMotherload === 0) {
+    return false;
+  }
+
+  // Calculate percent change from setup motherload
+  const percentChange = ((currentMotherload - setupMotherload) / setupMotherload) * 100;
+  const absoluteChange = Math.abs(currentMotherload - setupMotherload);
+
+  // Restart conditions:
+  // 1. Motherload increased by 50%+ AND at least 100 ORB increase
+  //    Example: 300 → 450+ (or 200 → 300+)
+  // 2. Motherload decreased by 40%+ AND at least 100 ORB decrease
+  //    Example: 500 → 300- (need to reduce deployment amounts)
+  const shouldIncrease = percentChange >= 50 && absoluteChange >= 100;
+  const shouldDecrease = percentChange <= -40 && absoluteChange >= 100;
+
+  if (shouldIncrease) {
+    logger.info(`\n${'='.repeat(60)}`);
+    logger.info('🚀 MOTHERLOAD GROWTH DETECTED');
+    logger.info(`Setup: ${setupMotherload.toFixed(2)} ORB → Current: ${currentMotherload.toFixed(2)} ORB`);
+    logger.info(`Change: +${percentChange.toFixed(1)}% (+${absoluteChange.toFixed(0)} ORB)`);
+    logger.info('💡 Restarting automation with larger deployment amounts...');
+    logger.info('='.repeat(60));
+    return true;
+  }
+
+  if (shouldDecrease) {
+    logger.info(`\n${'='.repeat(60)}`);
+    logger.info('📉 MOTHERLOAD DECREASE DETECTED');
+    logger.info(`Setup: ${setupMotherload.toFixed(2)} ORB → Current: ${currentMotherload.toFixed(2)} ORB`);
+    logger.info(`Change: ${percentChange.toFixed(1)}% (${absoluteChange.toFixed(0)} ORB)`);
+    logger.info('💡 Restarting automation with smaller deployment amounts...');
+    logger.info('='.repeat(60));
+    return true;
+  }
+
+  return false;
+}
+
+/**
+ * Close current automation and restart with new amounts based on current motherload
+ */
+async function restartAutomationForScaling(): Promise<boolean> {
+  try {
+    logger.info('Closing current automation account...');
+    const closeInstruction = buildCloseAutomationInstruction();
+    const closeSig = await sendAndConfirmTransaction([closeInstruction], 'Close Automation for Scaling');
+    logger.info(`✅ Automation closed: ${closeSig}`);
+
+    // Wait for closure to propagate
+    await sleep(2000);
+
+    // Recreate with current motherload (autoSetupAutomation fetches it automatically)
+    logger.info('Recreating automation with updated amounts...');
+    const setupSuccess = await autoSetupAutomation();
+
+    if (setupSuccess) {
+      logger.info('✅ Automation successfully restarted with optimized amounts!');
+      return true;
+    } else {
+      logger.error('❌ Failed to recreate automation');
+      return false;
+    }
+  } catch (error) {
+    logger.error('Failed to restart automation:', error);
+    return false;
+  }
+}
+
+/**
  * Auto-swap: Refund automation account by swapping ORB to SOL when balance is low
  */
 async function autoRefundAutomation(automationInfo: any): Promise<boolean> {
@@ -308,10 +564,30 @@ async function autoRefundAutomation(automationInfo: any): Promise<boolean> {
     const balances = await getBalances();
     const orbToSwap = Math.max(0, balances.orb - config.minOrbToKeep);
 
-    if (orbToSwap < 0.1) {
-      logger.error(`❌ Insufficient ORB to swap. Have: ${balances.orb.toFixed(2)}, Reserve: ${config.minOrbToKeep}`);
-      logger.warn('💡 Tip: Lower MIN_ORB_TO_KEEP in .env or claim more ORB rewards');
+    if (orbToSwap < config.minOrbSwapAmount) {
+      logger.error(`❌ Insufficient ORB to swap. Have: ${balances.orb.toFixed(2)}, Reserve: ${config.minOrbToKeep}, Min Swap: ${config.minOrbSwapAmount}`);
+      logger.warn('💡 Tip: Lower MIN_ORB_TO_KEEP or MIN_ORB_SWAP_AMOUNT in .env or claim more ORB rewards');
       return false;
+    }
+
+    // Check if ORB price meets minimum threshold
+    if (config.minOrbPriceUsd > 0) {
+      logger.info('Checking ORB price before swapping...');
+      const { priceInUsd } = await getOrbPrice();
+
+      if (priceInUsd === 0) {
+        logger.warn('⚠️  Could not fetch ORB price. Skipping swap for safety.');
+        logger.warn('💡 Set MIN_ORB_PRICE_USD=0 in .env to swap without price check');
+        return false;
+      }
+
+      if (priceInUsd < config.minOrbPriceUsd) {
+        logger.warn(`⚠️  ORB price too low: $${priceInUsd.toFixed(2)} (minimum: $${config.minOrbPriceUsd.toFixed(2)})`);
+        logger.info('💡 Waiting for better price before swapping. Will check again next cycle.');
+        return false;
+      }
+
+      logger.info(`✅ ORB price acceptable: $${priceInUsd.toFixed(2)} (minimum: $${config.minOrbPriceUsd.toFixed(2)})`);
     }
 
     // Swap ALL available ORB
@@ -564,6 +840,30 @@ async function autoMineRound(automationInfo: any): Promise<boolean> {
       return false;
     }
 
+    // Production Cost Profitability Check
+    if (config.enableProductionCostCheck) {
+      const costPerRound = automationInfo.costPerRound / 1e9;
+      const profitability = await isProfitableToMine(costPerRound, motherloadOrb);
+
+      if (!profitability.profitable) {
+        logger.info(`\n${'='.repeat(60)}`);
+        logger.info('❌ UNPROFITABLE MINING CONDITIONS');
+        logger.info('='.repeat(60));
+        logger.info(`Motherload: ${motherloadOrb.toFixed(2)} ORB`);
+        logger.info(`ORB Price: ${profitability.orbPrice.toFixed(6)} SOL`);
+        logger.info('\nProduction Cost Analysis:');
+        logger.info(`  ${profitability.breakdownMessage.split('\n').join('\n  ')}`);
+        logger.info('='.repeat(60));
+        logger.info('💡 Skipping this round - waiting for better conditions');
+        logger.info('='.repeat(60));
+        return false;
+      } else {
+        // Log profitability info at debug level
+        logger.debug(`\nProduction Cost Analysis (Profitable):`);
+        logger.debug(`  ${profitability.breakdownMessage.split('\n').join('\n  ')}`);
+      }
+    }
+
     // Check if round is still active
     if (new BN(currentSlot).gte(board.endSlot)) {
       logger.debug('Round has ended, waiting for new round...');
@@ -753,6 +1053,28 @@ export async function smartBotCommand(): Promise<void> {
           logger.info(`📍 New Round: ${currentRoundId}`);
           logger.info('='.repeat(60));
           lastRoundId = currentRoundId;
+
+          // Check motherload for dynamic scaling
+          const treasury = await fetchTreasury();
+          const currentMotherload = Number(treasury.motherlode) / 1e9;
+          logger.debug(`Current motherload: ${currentMotherload.toFixed(2)} ORB (setup: ${setupMotherload.toFixed(2)} ORB)`);
+
+          // Check if we should restart automation based on motherload changes
+          if (await shouldRestartAutomation(currentMotherload)) {
+            const restartSuccess = await restartAutomationForScaling();
+            if (restartSuccess) {
+              // Wait for new automation to propagate
+              await sleep(2000);
+              // Reload automation info
+              automationInfo = await getAutomationInfo();
+              if (!automationInfo) {
+                logger.error('Failed to load automation after restart. Skipping this round.');
+                continue;
+              }
+            } else {
+              logger.warn('Restart failed, continuing with current automation.');
+            }
+          }
 
           // Reload automation info for current state
           automationInfo = await getAutomationInfo();

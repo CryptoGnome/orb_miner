@@ -8,6 +8,7 @@ import { JupiterQuote, JupiterSwapResponse } from '../types';
 import { retry } from './retry';
 
 const WSOL_MINT = 'So11111111111111111111111111111111111111112'; // Wrapped SOL
+const USDC_MINT = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v'; // USDC
 
 // Fallback endpoints if primary fails (use /swap/v1 for lite-api)
 const FALLBACK_ENDPOINTS = [
@@ -18,27 +19,119 @@ const FALLBACK_ENDPOINTS = [
 
 let workingEndpoint: string | null = null;
 
-// Get price of ORB in SOL and USD
+// Get price of ORB in SOL by using quote endpoint
+// The lite-api doesn't have a /price endpoint, so we derive price from a small quote
 export async function getOrbPrice(): Promise<{ priceInSol: number; priceInUsd: number }> {
   try {
-    const response = await axios.get(`${config.jupiterApiUrl}/price`, {
-      params: {
-        ids: config.orbTokenMint.toBase58(),
-      },
-    });
+    // Request a quote for 1 ORB to SOL to get the current price
+    const oneOrbInLamports = 1e9; // 1 ORB = 1,000,000,000 lamports
 
-    const priceData = response.data.data[config.orbTokenMint.toBase58()];
-    if (!priceData) {
-      throw new Error('ORB price not found');
+    const params = {
+      inputMint: config.orbTokenMint.toBase58(),
+      outputMint: WSOL_MINT,
+      amount: oneOrbInLamports.toString(),
+      slippageBps: '50',
+      onlyDirectRoutes: 'false',
+      asLegacyTransaction: 'false',
+    };
+
+    // Try to get quote from working endpoint
+    let quote = null;
+
+    // Try working endpoint first
+    if (workingEndpoint) {
+      quote = await tryGetQuote(workingEndpoint, params);
     }
 
+    // Try primary endpoint if working endpoint failed
+    if (!quote) {
+      quote = await tryGetQuote(config.jupiterApiUrl, params);
+    }
+
+    // Try fallback endpoints
+    if (!quote) {
+      for (const fallbackUrl of FALLBACK_ENDPOINTS) {
+        if (fallbackUrl === config.jupiterApiUrl) continue;
+        quote = await tryGetQuote(fallbackUrl, params);
+        if (quote) break;
+      }
+    }
+
+    if (!quote || !quote.outAmount) {
+      throw new Error('Failed to get ORB price quote from all endpoints');
+    }
+
+    // Calculate price: (output SOL in lamports) / (input ORB in lamports)
+    // This gives us SOL per ORB
+    const priceInSol = Number(quote.outAmount) / oneOrbInLamports;
+
+    // Get SOL price in USD to calculate ORB price in USD
+    const solPriceUsd = await getSolPriceInUsd();
+    const priceInUsd = priceInSol * solPriceUsd;
+
+    logger.debug(`ORB Price: ${priceInSol.toFixed(8)} SOL (~$${priceInUsd.toFixed(2)} USD) (from quote: 1 ORB → ${(Number(quote.outAmount) / 1e9).toFixed(8)} SOL)`);
+
     return {
-      priceInSol: priceData.price || 0,
-      priceInUsd: priceData.price || 0,
+      priceInSol,
+      priceInUsd,
     };
   } catch (error) {
     logger.error('Failed to fetch ORB price:', error);
     return { priceInSol: 0, priceInUsd: 0 };
+  }
+}
+
+// Get price of SOL in USD (via USDC)
+export async function getSolPriceInUsd(): Promise<number> {
+  try {
+    // Request a quote for 1 SOL to USDC to get the current price
+    const oneSolInLamports = 1e9; // 1 SOL = 1,000,000,000 lamports
+
+    const params = {
+      inputMint: WSOL_MINT,
+      outputMint: USDC_MINT,
+      amount: oneSolInLamports.toString(),
+      slippageBps: '50',
+      onlyDirectRoutes: 'false',
+      asLegacyTransaction: 'false',
+    };
+
+    // Try to get quote
+    let quote = null;
+
+    // Try working endpoint first
+    if (workingEndpoint) {
+      quote = await tryGetQuote(workingEndpoint, params);
+    }
+
+    // Try primary endpoint if working endpoint failed
+    if (!quote) {
+      quote = await tryGetQuote(config.jupiterApiUrl, params);
+    }
+
+    // Try fallback endpoints
+    if (!quote) {
+      for (const fallbackUrl of FALLBACK_ENDPOINTS) {
+        if (fallbackUrl === config.jupiterApiUrl) continue;
+        quote = await tryGetQuote(fallbackUrl, params);
+        if (quote) break;
+      }
+    }
+
+    if (!quote || !quote.outAmount) {
+      logger.warn('Failed to get SOL/USD price, using 0');
+      return 0;
+    }
+
+    // USDC has 6 decimals, so divide by 1e6
+    const priceInUsd = Number(quote.outAmount) / 1e6;
+
+    logger.debug(`SOL Price: $${priceInUsd.toFixed(2)} USD (from quote: 1 SOL → ${priceInUsd.toFixed(2)} USDC)`);
+
+    return priceInUsd;
+  } catch (error) {
+    logger.error('Failed to fetch SOL/USD price:', error);
+    return 0;
   }
 }
 
@@ -235,6 +328,7 @@ export async function swapOrbToSol(
 
 export default {
   getOrbPrice,
+  getSolPriceInUsd,
   getSwapQuote,
   executeSwap,
   swapOrbToSol,
