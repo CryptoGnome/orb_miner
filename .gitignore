@@ -14,6 +14,12 @@ build/
 logs/
 *.log
 
+# Database (local mining data)
+data/
+*.db
+*.db-shm
+*.db-wal
+
 # IDE
 .vscode/
 .idea/

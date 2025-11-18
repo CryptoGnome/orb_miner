@@ -25,6 +25,15 @@ import { sleep } from '../utils/retry';
 import { TransactionInstruction, SystemProgram, PublicKey } from '@solana/web3.js';
 import BN from 'bn.js';
 import logger, { ui } from '../utils/logger';
+import {
+  initializeDatabase,
+  closeDatabase,
+  recordTransaction,
+  recordRound,
+  recordBalance,
+  recordPrice,
+  getQuickPnLSnapshot
+} from '../utils/database';
 
 /**
  * Smart Autonomous ORB Mining Bot
@@ -44,6 +53,7 @@ let signalHandlersRegistered = false;
 let lastRewardsCheck = 0;
 let lastStakeCheck = 0;
 let lastSwapCheck = 0;
+let lastBalanceSnapshot = 0;
 let setupMotherload = 0; // Track motherload at automation setup time for dynamic scaling
 
 // Setup graceful shutdown
@@ -51,10 +61,16 @@ function setupSignalHandlers() {
   if (signalHandlersRegistered) return;
   signalHandlersRegistered = true;
 
-  const shutdownHandler = () => {
+  const shutdownHandler = async () => {
     if (isRunning) {
       logger.info('\nShutdown signal received, stopping gracefully...');
       isRunning = false;
+      // Close database connection on shutdown
+      try {
+        await closeDatabase();
+      } catch (error) {
+        logger.error('Failed to close database:', error);
+      }
     } else {
       logger.info('Force stopping...');
       process.exit(0);
@@ -328,6 +344,19 @@ async function autoSetupAutomation(): Promise<boolean> {
     setupMotherload = motherloadOrb;
     logger.debug(`Tracking setup motherload: ${setupMotherload.toFixed(2)} ORB`);
 
+    // Record automation setup in database
+    try {
+      await recordTransaction({
+        type: 'automation_setup',
+        signature,
+        solAmount: deposit,
+        status: 'success',
+        notes: `Setup with ${targetRounds} rounds @ ${solPerRound.toFixed(4)} SOL/round (motherload: ${motherloadOrb.toFixed(2)} ORB)`,
+      });
+    } catch (error) {
+      logger.error('Failed to record automation setup:', error);
+    }
+
     return true;
   } catch (error) {
     logger.error('Auto-setup failed:', error);
@@ -335,6 +364,91 @@ async function autoSetupAutomation(): Promise<boolean> {
   }
 }
 
+
+/**
+ * Display quick PnL preview with current balances
+ *
+ * @param automationBalance - Current automation account balance in SOL
+ * @param claimableSol - Pending claimable SOL rewards
+ * @param claimableOrb - Pending claimable ORB rewards
+ * @param walletOrb - Current wallet ORB balance
+ *
+ * Uses the same calculation logic as the full PnL report for consistency
+ */
+async function displayQuickPnL(
+  automationBalance: number,
+  claimableSol: number,
+  claimableOrb: number,
+  walletOrb: number
+): Promise<void> {
+  try {
+    const pnl = await getQuickPnLSnapshot(
+      automationBalance,
+      claimableSol,
+      claimableOrb,
+      walletOrb
+    );
+
+    // Calculate ROI
+    const roi = pnl.totalDeployedSol > 0 ? (pnl.netSolPnl / pnl.totalDeployedSol) * 100 : 0;
+    const pnlColor = pnl.netSolPnl >= 0 ? '✅' : '❌';
+
+    // Calculate total current value for verification
+    const totalCurrentValue = pnl.totalClaimedSol + pnl.totalSwappedSol + automationBalance + claimableSol;
+
+    // Display compact PnL summary with full calculation breakdown
+    logger.info('───────────────────────────────────────────────');
+    logger.info(`💰 Net PnL: ${pnlColor} ${pnl.netSolPnl >= 0 ? '+' : ''}${pnl.netSolPnl.toFixed(4)} SOL (${roi >= 0 ? '+' : ''}${roi.toFixed(1)}% ROI)`);
+    logger.info(`📊 Capital Deployed: ${pnl.totalDeployedSol.toFixed(4)} SOL (automation setup only)`);
+    logger.info(`📈 Current Value: ${totalCurrentValue.toFixed(4)} SOL`);
+    logger.info(`   = ${pnl.totalClaimedSol.toFixed(4)} claimed + ${pnl.totalSwappedSol.toFixed(4)} swapped + ${automationBalance.toFixed(4)} automation + ${claimableSol.toFixed(4)} pending`);
+    logger.info(`🪙 ORB Balance: ${pnl.netOrbBalance.toFixed(2)} ORB`);
+    logger.info(`   = ${pnl.totalClaimedOrb.toFixed(2)} claimed - ${pnl.totalSwappedOrb.toFixed(2)} swapped + ${claimableOrb.toFixed(2)} pending + ${walletOrb.toFixed(2)} wallet`);
+    logger.info('───────────────────────────────────────────────');
+  } catch (error) {
+    logger.debug('Failed to display quick PnL:', error);
+    // Don't throw - this is non-critical
+  }
+}
+
+/**
+ * Capture periodic balance snapshots for PnL tracking
+ */
+async function captureBalanceSnapshot(): Promise<void> {
+  try {
+    const now = Date.now();
+    // Capture every 5 minutes
+    if (now - lastBalanceSnapshot < 300000) {
+      return;
+    }
+    lastBalanceSnapshot = now;
+
+    const wallet = getWallet();
+    const balances = await getBalances();
+    const miner = await fetchMiner(wallet.publicKey);
+    const stake = await fetchStake(wallet.publicKey);
+    const automationInfo = await getAutomationInfo();
+
+    await recordBalance(
+      balances.sol,
+      balances.orb,
+      automationInfo ? automationInfo.balance / 1e9 : 0,
+      miner ? Number(miner.rewardsSol) / 1e9 : 0,
+      miner ? Number(miner.rewardsOre) / 1e9 : 0,
+      stake ? Number(stake.balance) / 1e9 : 0
+    );
+
+    // Also capture ORB price
+    const { priceInUsd, priceInSol } = await getOrbPrice();
+    if (priceInUsd > 0 && priceInSol > 0) {
+      await recordPrice(priceInUsd, priceInSol);
+    }
+
+    logger.debug('Captured balance snapshot');
+  } catch (error) {
+    logger.error('Failed to capture balance snapshot:', error);
+  }
+}
 
 /**
  * Auto-claim: Check and claim rewards when thresholds are met
@@ -375,6 +489,36 @@ async function autoClaimRewards(): Promise<void> {
       const signature = await sendAndConfirmTransaction(instructions, 'Auto-Claim Mining');
       ui.success(`Claimed mining rewards`);
       logger.debug(`Transaction: ${signature}`);
+
+      // Record claim transactions
+      try {
+        if (miner) {
+          const miningSol = Number(miner.rewardsSol) / 1e9;
+          const miningOrb = Number(miner.rewardsOre) / 1e9;
+
+          if (miningSol >= config.autoClaimSolThreshold) {
+            await recordTransaction({
+              type: 'claim_sol',
+              signature,
+              solAmount: miningSol,
+              status: 'success',
+              notes: 'Mining rewards',
+            });
+          }
+
+          if (miningOrb >= config.autoClaimOrbThreshold) {
+            await recordTransaction({
+              type: 'claim_orb',
+              signature,
+              orbAmount: miningOrb,
+              status: 'success',
+              notes: 'Mining rewards',
+            });
+          }
+        }
+      } catch (error) {
+        logger.error('Failed to record claim:', error);
+      }
     }
 
     // Check staking rewards (separate transaction to avoid failing mining claims)
@@ -401,6 +545,15 @@ async function autoClaimRewards(): Promise<void> {
   } catch (error) {
     logger.error('Auto-claim failed:', error);
   }
+}
+
+/**
+ * Build instruction to close automation account
+ * Returns the automation balance that will be returned on close
+ */
+async function getAutomationBalanceForClose(): Promise<number> {
+  const info = await getAutomationInfo();
+  return info ? info.balance / 1e9 : 0;
 }
 
 /**
@@ -477,9 +630,26 @@ async function shouldRestartAutomation(currentMotherload: number): Promise<boole
 async function restartAutomationForScaling(): Promise<boolean> {
   try {
     ui.info('Closing current automation...');
+
+    // Get balance BEFORE closing to record capital return
+    const returnedSol = await getAutomationBalanceForClose();
+
     const closeInstruction = buildCloseAutomationInstruction();
     const closeSig = await sendAndConfirmTransaction([closeInstruction], 'Close Automation for Scaling');
     logger.debug(`Automation closed: ${closeSig}`);
+
+    // Record automation close with returned SOL amount
+    try {
+      await recordTransaction({
+        type: 'automation_close',
+        signature: closeSig,
+        solAmount: returnedSol,
+        status: 'success',
+        notes: `Closed for dynamic scaling - returned ${returnedSol.toFixed(4)} SOL to wallet`,
+      });
+    } catch (error) {
+      logger.error('Failed to record automation close:', error);
+    }
 
     // Wait for closure to propagate
     await sleep(2000);
@@ -552,8 +722,34 @@ async function autoSellOrb(): Promise<void> {
 
     if (result.success && result.solReceived) {
       ui.success(`Received ${result.solReceived.toFixed(4)} SOL (kept in wallet for future restarts)`);
+
+      // Record swap transaction
+      try {
+        await recordTransaction({
+          type: 'swap',
+          signature: result.signature,
+          orbAmount: orbToSwap,
+          solAmount: result.solReceived,
+          status: 'success',
+          notes: `Swapped ORB to SOL (proactive selling)`,
+        });
+      } catch (error) {
+        logger.error('Failed to record swap:', error);
+      }
     } else {
       logger.error('❌ Auto-swap failed');
+
+      // Record failed swap
+      try {
+        await recordTransaction({
+          type: 'swap',
+          orbAmount: orbToSwap,
+          status: 'failed',
+          notes: 'Swap failed - check logs for details',
+        });
+      } catch (error) {
+        logger.error('Failed to record failed swap:', error);
+      }
     }
   } catch (error) {
     logger.error('Auto-sell ORB failed:', error);
@@ -610,6 +806,19 @@ async function autoStakeOrb(): Promise<void> {
       const signature = await sendAndConfirmTransaction([instruction], 'Auto-Stake');
       ui.success(`Staked ${stakeAmount.toFixed(2)} ORB`);
       logger.debug(`Transaction: ${signature}`);
+
+      // Record stake transaction
+      try {
+        await recordTransaction({
+          type: 'stake',
+          signature,
+          orbAmount: stakeAmount,
+          status: 'success',
+          notes: 'Auto-staked excess ORB',
+        });
+      } catch (error) {
+        logger.error('Failed to record stake:', error);
+      }
     }
   } catch (error) {
     logger.error('Auto-stake failed:', error);
@@ -762,6 +971,33 @@ async function autoMineRound(automationInfo: any): Promise<boolean> {
     logger.debug(`Transaction: ${signature}`);
     logger.info(`[TRANSACTION] Auto-Mine | ${solPerRound.toFixed(4)} SOL | ${signature}`);
 
+    // Record deployment transaction and round
+    try {
+      const board = await fetchBoard();
+      const treasury = await fetchTreasury();
+      const motherloadOrb = Number(treasury.motherlode) / 1e9;
+
+      await recordTransaction({
+        type: 'deploy',
+        signature,
+        roundId: board.roundId.toNumber(),
+        solAmount: solPerRound,
+        status: 'success',
+        notes: `Deployed to 25 squares (motherload: ${motherloadOrb.toFixed(2)} ORB)`,
+      });
+
+      await recordRound(
+        board.roundId.toNumber(),
+        motherloadOrb,
+        solPerRound,
+        25,
+        automationInfo.balance / 1e9,
+        (automationInfo.balance - automationInfo.costPerRound) / 1e9
+      );
+    } catch (error) {
+      logger.error('Failed to record deployment:', error);
+    }
+
     return true;
   } catch (error) {
     const errorMsg = String(error);
@@ -835,6 +1071,10 @@ async function autoMineRound(automationInfo: any): Promise<boolean> {
 export async function smartBotCommand(): Promise<void> {
   try {
     setupSignalHandlers();
+
+    // Initialize database for PnL tracking
+    ui.info('Initializing profit tracking database...');
+    await initializeDatabase();
 
     ui.header('🤖 ORB MINING BOT - AUTONOMOUS MODE');
     ui.info('Fully automated mining • Press Ctrl+C to stop');
@@ -977,8 +1217,12 @@ export async function smartBotCommand(): Promise<void> {
             deployedRounds++;
             ui.info(`Total rounds mined: ${deployedRounds}`);
 
-            // Check remaining balance
+            // Check remaining balance and fetch current state for PnL
+            const wallet = getWallet();
             const updatedInfo = await getAutomationInfo();
+            const miner = await fetchMiner(wallet.publicKey);
+            const balances = await getBalances();
+
             if (updatedInfo) {
               const remainingRounds = Math.floor(updatedInfo.balance / updatedInfo.costPerRound);
               const remainingBalance = updatedInfo.balance / 1e9;
@@ -992,6 +1236,20 @@ export async function smartBotCommand(): Promise<void> {
                 ui.warning('Budget depleted - will close automation after cleanup');
               }
             }
+
+            // Display quick PnL preview after each round with current balances
+            const currentAutomationBalance = updatedInfo ? updatedInfo.balance / 1e9 : 0;
+            const currentClaimableSol = miner ? Number(miner.rewardsSol) / 1e9 : 0;
+            const currentClaimableOrb = miner ? Number(miner.rewardsOre) / 1e9 : 0;
+            const currentWalletOrb = balances.orb;
+
+            await displayQuickPnL(
+              currentAutomationBalance,
+              currentClaimableSol,
+              currentClaimableOrb,
+              currentWalletOrb
+            );
+
             ui.blank();
           }
         }
@@ -1004,10 +1262,11 @@ export async function smartBotCommand(): Promise<void> {
           const remainingRounds = Math.floor(currentInfo.balance / currentInfo.costPerRound);
 
           if (remainingRounds >= 2) {
-            // Normal operations: do claims, stakes, and swaps
+            // Normal operations: do claims, stakes, swaps, and balance snapshots
             await autoClaimRewards();
             await autoStakeOrb();
             await autoSwapCheck();
+            await captureBalanceSnapshot();
           } else {
             // Critical budget: skip slow operations to avoid missing deployments
             logger.debug(`Skipping slow operations (${remainingRounds} rounds remaining)`);
@@ -1018,6 +1277,7 @@ export async function smartBotCommand(): Promise<void> {
           await autoClaimRewards();
           await autoStakeOrb();
           await autoSwapCheck();
+          await captureBalanceSnapshot();
         }
 
         // Close automation if flagged (happens after all operations, no rush)
@@ -1028,6 +1288,18 @@ export async function smartBotCommand(): Promise<void> {
             logger.debug(`Automation account closed: ${closeSig}`);
             ui.success('SOL reclaimed - will recreate automation on next round');
             shouldCloseAutomation = false; // Reset flag
+
+            // Record automation close
+            try {
+              await recordTransaction({
+                type: 'automation_close',
+                signature: closeSig,
+                status: 'success',
+                notes: 'Budget depleted - closed for SOL reclaim',
+              });
+            } catch (error) {
+              logger.error('Failed to record automation close:', error);
+            }
           } catch (closeError) {
             logger.error('Failed to close automation account:', closeError);
             shouldCloseAutomation = false; // Reset flag to avoid retry loop

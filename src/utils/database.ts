@@ -1,0 +1,531 @@
+import sqlite3 from 'sqlite3';
+import path from 'path';
+import fs from 'fs';
+import logger from './logger';
+
+// Database file path
+const DB_DIR = path.join(process.cwd(), 'data');
+const DB_PATH = path.join(DB_DIR, 'orb_mining.db');
+
+// Ensure data directory exists
+if (!fs.existsSync(DB_DIR)) {
+  fs.mkdirSync(DB_DIR, { recursive: true });
+}
+
+// Database instance
+let db: sqlite3.Database | null = null;
+
+/**
+ * Initialize database and create tables if they don't exist
+ */
+export async function initializeDatabase(): Promise<void> {
+  return new Promise((resolve, reject) => {
+    db = new sqlite3.Database(DB_PATH, (err) => {
+      if (err) {
+        logger.error('Failed to connect to database:', err);
+        reject(err);
+        return;
+      }
+
+      logger.info(`Database connected: ${DB_PATH}`);
+
+      // Create tables
+      createTables()
+        .then(() => resolve())
+        .catch((err) => reject(err));
+    });
+  });
+}
+
+/**
+ * Create all database tables
+ */
+async function createTables(): Promise<void> {
+  const tables = [
+    // Transactions table - all on-chain activity
+    `CREATE TABLE IF NOT EXISTS transactions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      timestamp INTEGER NOT NULL,
+      type TEXT NOT NULL,
+      signature TEXT,
+      round_id INTEGER,
+      sol_amount REAL DEFAULT 0,
+      orb_amount REAL DEFAULT 0,
+      status TEXT NOT NULL,
+      notes TEXT,
+      created_at INTEGER DEFAULT (strftime('%s', 'now'))
+    )`,
+
+    // Rounds table - round history
+    `CREATE TABLE IF NOT EXISTS rounds (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      round_id INTEGER UNIQUE NOT NULL,
+      timestamp INTEGER NOT NULL,
+      motherload REAL NOT NULL,
+      deployed_amount REAL DEFAULT 0,
+      squares_deployed INTEGER DEFAULT 0,
+      automation_balance_before REAL DEFAULT 0,
+      automation_balance_after REAL DEFAULT 0,
+      created_at INTEGER DEFAULT (strftime('%s', 'now'))
+    )`,
+
+    // Balances table - periodic snapshots
+    `CREATE TABLE IF NOT EXISTS balances (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      timestamp INTEGER NOT NULL,
+      wallet_sol REAL DEFAULT 0,
+      wallet_orb REAL DEFAULT 0,
+      automation_sol REAL DEFAULT 0,
+      claimable_sol REAL DEFAULT 0,
+      claimable_orb REAL DEFAULT 0,
+      staked_orb REAL DEFAULT 0,
+      created_at INTEGER DEFAULT (strftime('%s', 'now'))
+    )`,
+
+    // Price history table - ORB price tracking
+    `CREATE TABLE IF NOT EXISTS prices (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      timestamp INTEGER NOT NULL,
+      orb_price_usd REAL NOT NULL,
+      orb_price_sol REAL NOT NULL,
+      created_at INTEGER DEFAULT (strftime('%s', 'now'))
+    )`,
+
+    // Indexes for faster queries
+    `CREATE INDEX IF NOT EXISTS idx_transactions_timestamp ON transactions(timestamp)`,
+    `CREATE INDEX IF NOT EXISTS idx_transactions_type ON transactions(type)`,
+    `CREATE INDEX IF NOT EXISTS idx_rounds_timestamp ON rounds(timestamp)`,
+    `CREATE INDEX IF NOT EXISTS idx_balances_timestamp ON balances(timestamp)`,
+    `CREATE INDEX IF NOT EXISTS idx_prices_timestamp ON prices(timestamp)`,
+  ];
+
+  for (const sql of tables) {
+    await runQuery(sql);
+  }
+
+  logger.info('Database tables initialized');
+}
+
+/**
+ * Run a SQL query with no return value
+ */
+function runQuery(sql: string, params: any[] = []): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (!db) {
+      reject(new Error('Database not initialized'));
+      return;
+    }
+
+    db.run(sql, params, (err) => {
+      if (err) {
+        logger.error('Database query error:', err, { sql, params });
+        reject(err);
+        return;
+      }
+      resolve();
+    });
+  });
+}
+
+/**
+ * Get a single row from database
+ */
+function getQuery<T>(sql: string, params: any[] = []): Promise<T | undefined> {
+  return new Promise((resolve, reject) => {
+    if (!db) {
+      reject(new Error('Database not initialized'));
+      return;
+    }
+
+    db.get(sql, params, (err, row) => {
+      if (err) {
+        logger.error('Database query error:', err, { sql, params });
+        reject(err);
+        return;
+      }
+      resolve(row as T | undefined);
+    });
+  });
+}
+
+/**
+ * Get all rows from database
+ */
+function allQuery<T>(sql: string, params: any[] = []): Promise<T[]> {
+  return new Promise((resolve, reject) => {
+    if (!db) {
+      reject(new Error('Database not initialized'));
+      return;
+    }
+
+    db.all(sql, params, (err, rows) => {
+      if (err) {
+        logger.error('Database query error:', err, { sql, params });
+        reject(err);
+        return;
+      }
+      resolve(rows as T[]);
+    });
+  });
+}
+
+/**
+ * Close database connection
+ */
+export async function closeDatabase(): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (!db) {
+      resolve();
+      return;
+    }
+
+    db.close((err) => {
+      if (err) {
+        logger.error('Failed to close database:', err);
+        reject(err);
+        return;
+      }
+      logger.info('Database connection closed');
+      db = null;
+      resolve();
+    });
+  });
+}
+
+// ============================================================================
+// Transaction tracking functions
+// ============================================================================
+
+export interface TransactionRecord {
+  type: 'deploy' | 'claim_sol' | 'claim_orb' | 'swap' | 'stake' | 'unstake' | 'automation_setup' | 'automation_close';
+  signature?: string;
+  roundId?: number;
+  solAmount?: number;
+  orbAmount?: number;
+  status: 'success' | 'failed';
+  notes?: string;
+}
+
+export async function recordTransaction(record: TransactionRecord): Promise<void> {
+  const sql = `
+    INSERT INTO transactions (timestamp, type, signature, round_id, sol_amount, orb_amount, status, notes)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `;
+
+  const params = [
+    Date.now(),
+    record.type,
+    record.signature || null,
+    record.roundId || null,
+    record.solAmount || 0,
+    record.orbAmount || 0,
+    record.status,
+    record.notes || null,
+  ];
+
+  await runQuery(sql, params);
+  logger.debug(`Recorded transaction: ${record.type} - ${record.status}`);
+}
+
+export async function recordRound(
+  roundId: number,
+  motherload: number,
+  deployedAmount: number,
+  squaresDeployed: number,
+  automationBalanceBefore: number,
+  automationBalanceAfter: number
+): Promise<void> {
+  const sql = `
+    INSERT OR REPLACE INTO rounds (round_id, timestamp, motherload, deployed_amount, squares_deployed, automation_balance_before, automation_balance_after)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+  `;
+
+  const params = [
+    roundId,
+    Date.now(),
+    motherload,
+    deployedAmount,
+    squaresDeployed,
+    automationBalanceBefore,
+    automationBalanceAfter,
+  ];
+
+  await runQuery(sql, params);
+  logger.debug(`Recorded round ${roundId}: ${deployedAmount} SOL deployed`);
+}
+
+export async function recordBalance(
+  walletSol: number,
+  walletOrb: number,
+  automationSol: number,
+  claimableSol: number,
+  claimableOrb: number,
+  stakedOrb: number
+): Promise<void> {
+  const sql = `
+    INSERT INTO balances (timestamp, wallet_sol, wallet_orb, automation_sol, claimable_sol, claimable_orb, staked_orb)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+  `;
+
+  const params = [
+    Date.now(),
+    walletSol,
+    walletOrb,
+    automationSol,
+    claimableSol,
+    claimableOrb,
+    stakedOrb,
+  ];
+
+  await runQuery(sql, params);
+  logger.debug('Recorded balance snapshot');
+}
+
+export async function recordPrice(orbPriceUsd: number, orbPriceSol: number): Promise<void> {
+  const sql = `
+    INSERT INTO prices (timestamp, orb_price_usd, orb_price_sol)
+    VALUES (?, ?, ?)
+  `;
+
+  const params = [Date.now(), orbPriceUsd, orbPriceSol];
+
+  await runQuery(sql, params);
+  logger.debug(`Recorded ORB price: $${orbPriceUsd.toFixed(2)} / ${orbPriceSol.toFixed(6)} SOL`);
+}
+
+// ============================================================================
+// Query functions for reporting
+// ============================================================================
+
+/**
+ * PnL Accounting Logic:
+ *
+ * CAPITAL DEPLOYED (what you put in):
+ * - automation_setup transactions only (initial deposits to automation account)
+ * - NOT individual deploy transactions (those spend from automation account)
+ *
+ * CURRENT VALUE (what you have now):
+ * - Claimed SOL (withdrawn rewards)
+ * - Swapped SOL (from selling ORB)
+ * - Automation balance (still working/mining)
+ * - Pending claimable SOL (not yet claimed)
+ *
+ * NET PnL = Current Value - Capital Deployed
+ *
+ * Example:
+ * - Deploy 10 SOL to automation (capital deployed = 10 SOL)
+ * - Mine 5 rounds spending 2 SOL (automation balance = 8 SOL)
+ * - Earn 0.5 SOL rewards (claimable = 0.5 SOL)
+ * - Current value = 8 + 0.5 = 8.5 SOL
+ * - Net PnL = 8.5 - 10 = -1.5 SOL (lost to fees/competition)
+ */
+
+export interface PnLSummary {
+  totalDeployedSol: number;
+  totalClaimedSol: number;
+  totalClaimedOrb: number;
+  totalSwappedOrb: number;
+  totalSwappedSol: number;
+  totalStakedOrb: number;
+  roundsParticipated: number;
+  netSolPnl: number;
+  avgOrbPriceUsd: number;
+  estimatedOrbValueUsd: number;
+  totalPnlUsd: number;
+}
+
+export async function getPnLSummary(startTimestamp?: number, endTimestamp?: number): Promise<PnLSummary> {
+  const whereClause = buildTimeWhereClause(startTimestamp, endTimestamp);
+
+  // Get transaction totals
+  // IMPORTANT: Only count automation_setup as capital deployed, NOT individual deploy transactions
+  // Deploy transactions are spending from automation account (already counted in setup)
+  const txSummary = await getQuery<{
+    total_deployed: number;
+    total_claimed_sol: number;
+    total_claimed_orb: number;
+    total_swapped_orb: number;
+    total_swapped_sol: number;
+    total_staked: number;
+  }>(`
+    SELECT
+      COALESCE(SUM(CASE WHEN type = 'automation_setup' THEN sol_amount ELSE 0 END), 0) as total_deployed,
+      COALESCE(SUM(CASE WHEN type = 'claim_sol' THEN sol_amount ELSE 0 END), 0) as total_claimed_sol,
+      COALESCE(SUM(CASE WHEN type = 'claim_orb' THEN orb_amount ELSE 0 END), 0) as total_claimed_orb,
+      COALESCE(SUM(CASE WHEN type = 'swap' THEN orb_amount ELSE 0 END), 0) as total_swapped_orb,
+      COALESCE(SUM(CASE WHEN type = 'swap' THEN sol_amount ELSE 0 END), 0) as total_swapped_sol,
+      COALESCE(SUM(CASE WHEN type = 'stake' THEN orb_amount ELSE 0 END), 0) as total_staked
+    FROM transactions
+    WHERE status = 'success' ${whereClause}
+  `);
+
+  // Get rounds count
+  const roundsCount = await getQuery<{ count: number }>(`
+    SELECT COUNT(DISTINCT round_id) as count
+    FROM rounds
+    ${whereClause ? 'WHERE ' + whereClause.replace('AND', '').trim() : ''}
+  `);
+
+  // Get average ORB price
+  const avgPrice = await getQuery<{ avg_price_usd: number }>(`
+    SELECT COALESCE(AVG(orb_price_usd), 0) as avg_price_usd
+    FROM prices
+    ${whereClause ? 'WHERE ' + whereClause.replace('AND', '').trim() : ''}
+  `);
+
+  const totalDeployedSol = txSummary?.total_deployed || 0;
+  const totalClaimedSol = txSummary?.total_claimed_sol || 0;
+  const totalClaimedOrb = txSummary?.total_claimed_orb || 0;
+  const totalSwappedOrb = txSummary?.total_swapped_orb || 0;
+  const totalSwappedSol = txSummary?.total_swapped_sol || 0;
+  const totalStakedOrb = txSummary?.total_staked || 0;
+  const roundsParticipated = roundsCount?.count || 0;
+  const avgOrbPriceUsd = avgPrice?.avg_price_usd || 0;
+
+  // Calculate net SOL PnL
+  const netSolPnl = (totalClaimedSol + totalSwappedSol) - totalDeployedSol;
+
+  // Calculate estimated ORB value
+  const netOrbBalance = totalClaimedOrb - totalSwappedOrb;
+  const estimatedOrbValueUsd = netOrbBalance * avgOrbPriceUsd;
+
+  // Total PnL in USD (convert SOL to USD using avg ORB/SOL price)
+  const totalPnlUsd = estimatedOrbValueUsd; // Simplified - can add SOL price conversion later
+
+  return {
+    totalDeployedSol,
+    totalClaimedSol,
+    totalClaimedOrb,
+    totalSwappedOrb,
+    totalSwappedSol,
+    totalStakedOrb,
+    roundsParticipated,
+    netSolPnl,
+    avgOrbPriceUsd,
+    estimatedOrbValueUsd,
+    totalPnlUsd,
+  };
+}
+
+export async function getRecentTransactions(limit: number = 50): Promise<any[]> {
+  const sql = `
+    SELECT * FROM transactions
+    ORDER BY timestamp DESC
+    LIMIT ?
+  `;
+
+  return allQuery(sql, [limit]);
+}
+
+export async function getRecentRounds(limit: number = 50): Promise<any[]> {
+  const sql = `
+    SELECT * FROM rounds
+    ORDER BY round_id DESC
+    LIMIT ?
+  `;
+
+  return allQuery(sql, [limit]);
+}
+
+export async function getBalanceHistory(limit: number = 100): Promise<any[]> {
+  const sql = `
+    SELECT * FROM balances
+    ORDER BY timestamp DESC
+    LIMIT ?
+  `;
+
+  return allQuery(sql, [limit]);
+}
+
+function buildTimeWhereClause(startTimestamp?: number, endTimestamp?: number): string {
+  const conditions = [];
+
+  if (startTimestamp) {
+    conditions.push(`timestamp >= ${startTimestamp}`);
+  }
+
+  if (endTimestamp) {
+    conditions.push(`timestamp <= ${endTimestamp}`);
+  }
+
+  return conditions.length > 0 ? `AND ${conditions.join(' AND ')}` : '';
+}
+
+// ============================================================================
+// Daily summary functions
+// ============================================================================
+
+export async function getDailySummaries(days: number = 7): Promise<any[]> {
+  const sql = `
+    SELECT
+      date(timestamp / 1000, 'unixepoch') as date,
+      COUNT(DISTINCT CASE WHEN type = 'deploy' THEN round_id END) as rounds,
+      COALESCE(SUM(CASE WHEN type = 'automation_setup' THEN sol_amount ELSE 0 END), 0) as deployed_sol,
+      COALESCE(SUM(CASE WHEN type = 'claim_sol' THEN sol_amount ELSE 0 END), 0) as claimed_sol,
+      COALESCE(SUM(CASE WHEN type = 'claim_orb' THEN orb_amount ELSE 0 END), 0) as claimed_orb,
+      COALESCE(SUM(CASE WHEN type = 'swap' THEN orb_amount ELSE 0 END), 0) as swapped_orb,
+      COALESCE(SUM(CASE WHEN type = 'swap' THEN sol_amount ELSE 0 END), 0) as swapped_sol
+    FROM transactions
+    WHERE timestamp >= (strftime('%s', 'now') - (? * 86400)) * 1000
+      AND status = 'success'
+    GROUP BY date
+    ORDER BY date DESC
+  `;
+
+  return allQuery(sql, [days]);
+}
+
+// ============================================================================
+// Quick PnL summary for live bot display
+// ============================================================================
+
+export interface QuickPnLSnapshot {
+  totalDeployedSol: number;
+  totalClaimedSol: number;
+  totalClaimedOrb: number;
+  totalSwappedSol: number;
+  totalSwappedOrb: number;
+  netSolPnl: number;
+  netOrbBalance: number;
+  roundsParticipated: number;
+}
+
+/**
+ * Get a quick PnL snapshot for live display
+ * Includes current balances (automation + pending claims)
+ */
+export async function getQuickPnLSnapshot(
+  currentAutomationBalance: number = 0,
+  currentClaimableSol: number = 0,
+  currentClaimableOrb: number = 0,
+  currentWalletOrb: number = 0
+): Promise<QuickPnLSnapshot> {
+  const summary = await getPnLSummary();
+
+  // Calculate net SOL including:
+  // - Claimed SOL
+  // - Swapped SOL (from selling ORB)
+  // - Current automation balance (deployed capital still working)
+  // - Pending claimable SOL
+  // - Minus total deployed
+  const totalReceived = summary.totalClaimedSol + summary.totalSwappedSol + currentAutomationBalance + currentClaimableSol;
+  const netSolPnl = totalReceived - summary.totalDeployedSol;
+
+  // Calculate net ORB including:
+  // - Claimed ORB
+  // - Pending claimable ORB
+  // - Current wallet ORB
+  // - Minus swapped ORB
+  const netOrbBalance = summary.totalClaimedOrb + currentClaimableOrb + currentWalletOrb - summary.totalSwappedOrb;
+
+  return {
+    totalDeployedSol: summary.totalDeployedSol,
+    totalClaimedSol: summary.totalClaimedSol,
+    totalClaimedOrb: summary.totalClaimedOrb,
+    totalSwappedSol: summary.totalSwappedSol,
+    totalSwappedOrb: summary.totalSwappedOrb,
+    netSolPnl,
+    netOrbBalance,
+    roundsParticipated: summary.roundsParticipated,
+  };
+}
