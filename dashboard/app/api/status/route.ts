@@ -31,10 +31,10 @@ export async function GET() {
 
     // Calculate claimable rewards
     const claimableSol = miner ? Number(miner.rewardsSol) / 1e9 : 0;
-    const claimableOrb = miner ? Number(miner.rewardsOre) / 1e11 : 0;
-    const stakedOrb = stake ? Number(stake.balance) / 1e11 : 0;
+    const claimableOrb = miner ? Number(miner.rewardsOre) / 1e9 : 0;
+    const stakedOrb = stake ? Number(stake.balance) / 1e9 : 0;
     const claimableStakingRewardsSol = stake ? Number(stake.rewardsSol) / 1e9 : 0;
-    const claimableStakingRewardsOre = stake ? Number(stake.rewardsOre) / 1e11 : 0;
+    const claimableStakingRewardsOre = stake ? Number(stake.rewardsOre) / 1e9 : 0;
 
     // Calculate automation balance (if automation account exists)
     let automationBalance = 0;
@@ -56,7 +56,7 @@ export async function GET() {
       // Current round info
       round: {
         id: board.roundId.toString(),
-        motherlode: treasury ? Number(treasury.motherlode) / 1e11 : 0,
+        motherlode: treasury ? Number(treasury.motherlode) / 1e9 : 0,
         startSlot: board.startSlot.toString(),
         endSlot: board.endSlot.toString(),
       },
@@ -92,14 +92,14 @@ export async function GET() {
       // Miner stats
       miner: miner ? {
         lifetimeRewardsSol: Number(miner.lifetimeRewardsSol) / 1e9,
-        lifetimeRewardsOre: Number(miner.lifetimeRewardsOre) / 1e11,
+        lifetimeRewardsOre: Number(miner.lifetimeRewardsOre) / 1e9,
         hasAutomation: automationBalance > 0,
       } : null,
 
       // Treasury info
       treasury: treasury ? {
-        totalStaked: Number(treasury.totalStaked) / 1e11,
-        totalUnclaimed: Number(treasury.totalUnclaimed) / 1e11,
+        totalStaked: Number(treasury.totalStaked) / 1e9,
+        totalUnclaimed: Number(treasury.totalUnclaimed) / 1e9,
       } : null,
     };
 

@@ -29,8 +29,8 @@ export async function GET() {
 
     // Calculate values needed for PnL
     const currentPendingSol = miner ? Number(miner.rewardsSol) / 1e9 : 0;
-    const currentPendingOrb = miner ? Number(miner.rewardsOre) / 1e11 : 0;
-    const currentStakedOrb = stake ? Number(stake.balance) / 1e11 : 0;
+    const currentPendingOrb = miner ? Number(miner.rewardsOre) / 1e9 : 0;
+    const currentStakedOrb = stake ? Number(stake.balance) / 1e9 : 0;
 
     // Calculate automation balance
     let currentAutomationSol = 0;
