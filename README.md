@@ -11,6 +11,8 @@ ORB is a **lottery-style mining game** on Solana where:
 - Winners get SOL from losing miners + ORB tokens from the motherload (reward vault)
 - This bot deploys to all 25 squares each round to maximize your chances
 
+**Learn more:** https://ore.blue/
+
 ## Key Features
 
 - **Fully Autonomous** - One command starts everything, zero manual intervention needed
@@ -47,7 +49,7 @@ Before you begin, make sure you have:
 ### 1. Clone the Repository
 
 ```bash
-git clone <your-repo-url>
+git clone https://github.com/CryptoGnome/orb_miner.git
 cd orb_miner
 ```
 
@@ -384,7 +386,7 @@ For developers and advanced users, see [CLAUDE.md](CLAUDE.md) for:
 
 ## Support
 
-- **Issues:** [Open an issue on GitHub](link-to-your-issues)
+- **Issues:** [Open an issue on GitHub](https://github.com/CryptoGnome/orb_miner/issues)
 - **Questions:** Check [CLAUDE.md](CLAUDE.md) for technical details
 - **Updates:** Watch this repo for updates
 
