@@ -235,22 +235,20 @@ export default function Home() {
               </TabsContent>
               <TabsContent value="staking" className="mt-4 space-y-3">
                 <div className="flex justify-between items-center">
-                  <span className="text-sm text-muted-foreground">SOL from Staking</span>
+                  <span className="text-sm text-muted-foreground">Claimable ORB</span>
                   <Badge variant="outline" className="bg-green-500/20 text-green-500 border-green-500/50">
-                    {(status?.claimable?.stakingRewardsSol || 0).toFixed(4)} SOL
+                    {(status?.staking?.accruedRewardsOrb || 0).toFixed(9)} ORB
                   </Badge>
                 </div>
                 <div className="flex justify-between items-center">
-                  <span className="text-sm text-muted-foreground">ORB from Staking</span>
-                  <Badge variant="outline" className="bg-green-500/20 text-green-500 border-green-500/50">
-                    {(status?.claimable?.stakingRewardsOrb || 0).toFixed(2)} ORB
-                  </Badge>
+                  <span className="text-sm text-muted-foreground">Your Staked ORB</span>
+                  <span className="text-sm font-semibold">{(status?.staking?.stakedOrb || 0).toFixed(2)} ORB</span>
                 </div>
                 <div className="pt-2 border-t">
                   <div className="flex justify-between items-center">
                     <span className="text-sm font-medium">Total Value</span>
                     <span className="font-bold text-green-500">
-                      ≈ {((status?.claimable?.stakingRewardsSol || 0) + ((status?.claimable?.stakingRewardsOrb || 0) * (status?.prices?.orbPriceSol || 0))).toFixed(4)} SOL
+                      ≈ {((status?.staking?.accruedRewardsOrb || 0) * (status?.prices?.orbPriceSol || 0)).toFixed(4)} SOL
                     </span>
                   </div>
                 </div>

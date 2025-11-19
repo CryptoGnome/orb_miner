@@ -42,6 +42,7 @@ export interface Miner {
 export interface Stake {
   authority: PublicKey;     // Account owner
   balance: BN;              // Staked ORB amount
+  rewardsFactor: Buffer;    // I80F48 rewards factor (16 bytes)
   rewardsSol: BN;           // Claimable SOL from staking
   rewardsOre: BN;           // Claimable ORE from staking
   lifetimeRewardsSol: BN;   // Total SOL earned from staking
@@ -52,6 +53,8 @@ export interface Stake {
 export interface Treasury {
   balance: BN;              // SOL balance for buy-bury
   motherlode: BN;           // ORE in the global rewards pool
+  minerRewardsFactor: Buffer;  // I80F48 miner rewards factor (16 bytes)
+  stakeRewardsFactor: Buffer;  // I80F48 stake rewards factor (16 bytes)
   totalStaked: BN;          // Current total staking deposits
   totalUnclaimed: BN;       // Unclaimed mining rewards
   totalRefined: BN;         // Refined mining rewards

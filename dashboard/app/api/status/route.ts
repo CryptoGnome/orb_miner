@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { ensureBotInitialized } from '@/lib/init-bot';
 import { Connection, PublicKey } from '@solana/web3.js';
 import { config } from '@bot/utils/config';
-import { fetchBoard, fetchMiner, fetchStake, fetchTreasury, getAutomationPDA } from '@bot/utils/accounts';
+import { fetchBoard, fetchMiner, fetchStake, fetchTreasury, getAutomationPDA, calculateAccruedStakingRewards } from '@bot/utils/accounts';
 import { getWallet, getBalances } from '@bot/utils/wallet';
 import { getOrbPrice } from '@bot/utils/jupiter';
 
@@ -35,6 +35,17 @@ export async function GET() {
     const stakedOrb = stake ? Number(stake.balance) / 1e9 : 0;
     const claimableStakingRewardsSol = stake ? Number(stake.rewardsSol) / 1e9 : 0;
     const claimableStakingRewardsOre = stake ? Number(stake.rewardsOre) / 1e9 : 0;
+
+    // Calculate accrued (unsettled) staking rewards using I80F48 reward factors
+    let accruedStakingRewardsOre = 0;
+    if (stake && treasury) {
+      const accruedLamports = calculateAccruedStakingRewards(
+        treasury.stakeRewardsFactor,
+        stake.rewardsFactor,
+        stake.balance
+      );
+      accruedStakingRewardsOre = Number(accruedLamports) / 1e9;
+    }
 
     // Calculate automation balance (if automation account exists)
     let automationBalance = 0;
@@ -81,6 +92,7 @@ export async function GET() {
         stakedOrb,
         claimableRewardsSol: claimableStakingRewardsSol,
         claimableRewardsOrb: claimableStakingRewardsOre,
+        accruedRewardsOrb: accruedStakingRewardsOre, // Accrued but not yet settled
       },
 
       // Price info

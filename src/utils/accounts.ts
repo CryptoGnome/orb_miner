@@ -28,6 +28,38 @@ function deserializeU64Array25(buffer: Buffer, offset: number): BN[] {
   return array;
 }
 
+// Helper to calculate accrued staking rewards from I80F48 reward factors
+// Formula: (treasuryFactor - stakeFactor) * stakeBalance
+// I80F48 has 48 fractional bits, so we need to shift right by 48 after multiplication
+export function calculateAccruedStakingRewards(
+  treasuryStakeRewardsFactor: Buffer,
+  stakeRewardsFactor: Buffer,
+  stakeBalance: BN
+): BN {
+  // Read 16-byte buffers as 128-bit little-endian integers
+  // We'll use two 64-bit parts (low and high)
+  const treasuryLow = treasuryStakeRewardsFactor.readBigUInt64LE(0);
+  const treasuryHigh = treasuryStakeRewardsFactor.readBigUInt64LE(8);
+  const treasuryFactor = (treasuryHigh << BigInt(64)) | treasuryLow;
+
+  const stakeLow = stakeRewardsFactor.readBigUInt64LE(0);
+  const stakeHigh = stakeRewardsFactor.readBigUInt64LE(8);
+  const stakeFactor = (stakeHigh << BigInt(64)) | stakeLow;
+
+  // Calculate difference in factors
+  const factorDiff = treasuryFactor - stakeFactor;
+
+  // Multiply by stake balance (which is in lamports, u64)
+  const balanceBigInt = BigInt(stakeBalance.toString());
+  const result = factorDiff * balanceBigInt;
+
+  // I80F48 has 48 fractional bits, so shift right by 48 to get the integer part
+  const accruedLamports = result >> BigInt(48);
+
+  // Convert to BN and ensure non-negative
+  return accruedLamports >= BigInt(0) ? new BN(accruedLamports.toString()) : new BN(0);
+}
+
 // Get Board PDA
 export function getBoardPDA(): [PublicKey, number] {
   return PublicKey.findProgramAddressSync(
@@ -270,7 +302,8 @@ export async function fetchStake(authority: PublicKey): Promise<Stake | null> {
   // Skip timestamps (last_claim_at, last_deposit_at, last_withdraw_at)
   offset += 8 + 8 + 8; // 24 bytes
 
-  // Skip rewards_factor (Numeric = 16 bytes)
+  // Read rewards_factor (Numeric = I80F48, 16 bytes)
+  const rewardsFactor = data.slice(offset, offset + 16);
   offset += 16;
 
   // Read claimable rewards (ORB only for staking)
@@ -282,6 +315,7 @@ export async function fetchStake(authority: PublicKey): Promise<Stake | null> {
   const stake: Stake = {
     authority: stakeAuthority,
     balance,
+    rewardsFactor,
     rewardsSol: new BN(0), // Staking only gives ORB rewards, not SOL
     rewardsOre,
     lifetimeRewardsSol: new BN(0), // Staking only gives ORB rewards
@@ -307,23 +341,25 @@ export async function fetchTreasury(): Promise<Treasury> {
 
   const data = accountInfo.data;
 
-  // Parse Treasury structure (based on Rust struct from ORE)
+  // Parse Treasury structure (based on IDL)
   // pub struct Treasury {
-  //   pub balance: u64,              // Offset 8
-  //   pub motherlode: u64,           // Offset 16 <-- GLOBAL MOTHERLODE
-  //   pub miner_rewards_factor: ...  // Complex type
-  //   pub stake_rewards_factor: ...  // Complex type
-  //   pub total_staked: u64,         // Offset varies
-  //   pub total_unclaimed: u64,
-  //   pub total_refined: u64,
+  //   pub balance: u64,                    // Offset 8
+  //   pub motherlode: u64,                 // Offset 16
+  //   pub miner_rewards_factor: Numeric,   // Offset 24 (16 bytes I80F48)
+  //   pub stake_rewards_factor: Numeric,   // Offset 40 (16 bytes I80F48)
+  //   pub total_staked: u64,               // Offset 56
+  //   pub total_unclaimed: u64,            // Offset 64
+  //   pub total_refined: u64,              // Offset 72
   // }
 
   const treasury: Treasury = {
-    balance: deserializeU64(data, 8),         // SOL balance
-    motherlode: deserializeU64(data, 16),     // ORE motherlode (GLOBAL)
-    totalStaked: deserializeU64(data, 72),    // Total staked (approximate)
-    totalUnclaimed: deserializeU64(data, 80), // Total unclaimed
-    totalRefined: deserializeU64(data, 88),   // Total refined
+    balance: deserializeU64(data, 8),              // SOL balance
+    motherlode: deserializeU64(data, 16),          // ORE motherlode (GLOBAL)
+    minerRewardsFactor: data.slice(24, 40),        // Miner rewards factor (I80F48)
+    stakeRewardsFactor: data.slice(40, 56),        // Stake rewards factor (I80F48)
+    totalStaked: deserializeU64(data, 56),         // Total staked
+    totalUnclaimed: deserializeU64(data, 64),      // Total unclaimed
+    totalRefined: deserializeU64(data, 72),        // Total refined
   };
 
   logger.debug(`Treasury: motherlode=${treasury.motherlode.toString()}, totalStaked=${treasury.totalStaked.toString()}`);
