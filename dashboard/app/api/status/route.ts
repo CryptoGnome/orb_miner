@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { ensureBotInitialized } from '@/lib/init-bot';
-import { Connection } from '@solana/web3.js';
+import { Connection, PublicKey } from '@solana/web3.js';
 import { config } from '@bot/utils/config';
 import { fetchBoard, fetchMiner, fetchStake, fetchTreasury } from '@bot/utils/accounts';
 import { getWallet, getBalances } from '@bot/utils/wallet';
@@ -16,14 +16,15 @@ export async function GET() {
 
     const connection = new Connection(config.rpcEndpoint);
     const wallet = getWallet();
-    const walletPublicKey = wallet.publicKey;
+    // Create a fresh PublicKey instance from the string to avoid toBuffer() issues
+    const walletPublicKey = new PublicKey(wallet.publicKey.toBase58());
 
     // Fetch blockchain data in parallel
     const [board, miner, stake, treasury, walletBalances, orbPrice] = await Promise.all([
-      fetchBoard(connection),
-      fetchMiner(connection, walletPublicKey),
-      fetchStake(connection, walletPublicKey).catch(() => null),
-      fetchTreasury(connection),
+      fetchBoard(),
+      fetchMiner(walletPublicKey),
+      fetchStake(walletPublicKey).catch(() => null),
+      fetchTreasury(),
       getBalances(connection, walletPublicKey),
       getOrbPrice().catch(() => ({ priceInSol: 0, priceInUsd: 0 })),
     ]);
