@@ -7,6 +7,8 @@
 [![Solana](https://img.shields.io/badge/Solana-Mainnet-14F195?style=for-the-badge&logo=solana&logoColor=white)](https://solana.com/)
 [![License](https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge)](LICENSE)
 
+[![BETA](https://img.shields.io/badge/STATUS-BETA-orange?style=for-the-badge&logo=github)](https://github.com/CryptoGnome/orb_miner)
+
 **A fully automated bot with advanced mathematical optimization**
 
 Monte Carlo Analysis • Kelly Criterion • Real-Time EV • Dynamic Scaling
@@ -754,6 +756,8 @@ For developers and advanced users, see **[CLAUDE.md](CLAUDE.md)** for in-depth t
 ## ⚠️ Disclaimer
 
 > **Important: Read before using this bot**
+
+**⚠️ BETA SOFTWARE:** This bot is currently in BETA. While extensively tested, use caution and start with small amounts.
 
 This bot interacts with the ORB mining program on Solana mainnet. Mining involves risk:
 
