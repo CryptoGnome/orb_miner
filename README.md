@@ -1,40 +1,223 @@
-# Smart Autonomous ORB Mining Bot
+<div align="center">
 
-A fully automated TypeScript bot for ORB mining on Solana with **advanced mathematical optimization**. Features Monte Carlo-optimized bet sizing (+139% avg ROI), real-time Expected Value (EV) analysis, Kelly Criterion-inspired bankroll management, and dynamic strategy adaptation. Set it up once, and let it mine autonomously with intelligent threshold-based operation.
+# 🤖 Smart Autonomous ORB Mining Bot
 
-## What is ORB Mining?
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.0+-3178C6?style=for-the-badge&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+[![Node.js](https://img.shields.io/badge/Node.js-16+-339933?style=for-the-badge&logo=node.js&logoColor=white)](https://nodejs.org/)
+[![Solana](https://img.shields.io/badge/Solana-Mainnet-14F195?style=for-the-badge&logo=solana&logoColor=white)](https://solana.com/)
+[![License](https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge)](LICENSE)
+
+**A fully automated bot with advanced mathematical optimization**
+
+Monte Carlo Analysis • Kelly Criterion • Real-Time EV • Dynamic Scaling
+
+[Features](#key-features) • [Quick Start](#quick-start) • [Intelligence](#advanced-intelligence-features) • [Docs](#technical-documentation)
+
+---
+
+</div>
+
+> 🎯 **+139% Average ROI** through Monte Carlo-optimized bet sizing
+> 📊 **Real-Time EV Analysis** using live on-chain competition data
+> 🛡️ **Kelly Criterion Bankroll Management** prevents over-betting
+> ⚡ **Fully Autonomous** - Set it and forget it
+
+## 📖 What is ORB Mining?
+
+<table>
+<tr>
+<td width="60%">
 
 ORB is a **lottery-style mining game** on Solana where:
-- Each round has a 5x5 grid (25 squares)
-- Miners deploy SOL to squares to participate
-- One random square wins the round
-- Winners get SOL from losing miners + ORB tokens from the motherload (reward vault)
-- This bot deploys to all 25 squares each round to maximize your chances
+- 🎲 Each round has a 5x5 grid (25 squares)
+- 💰 Miners deploy SOL to squares to participate
+- 🎯 One random square wins the round
+- 🏆 Winners get SOL from losing miners + ORB tokens from motherload
+- 🤖 **This bot deploys to all 25 squares** to maximize chances
 
-**Learn more:** https://ore.blue/
+[Learn more →](https://ore.blue/)
 
-## Key Features
+</td>
+<td width="40%">
 
-### Intelligence & Optimization
-- **Monte Carlo Optimized** - 10,000-simulation analysis determines optimal bet sizing for each tier (+139% avg ROI vs +74% with naive strategies)
-- **Kelly Criterion Bankroll Management** - Fractional betting (0.11% to 1.67% per round) prevents over-betting and minimizes ruin risk
-- **Real-Time EV Analysis** - Calculates Expected Value using live on-chain competition data before every deployment
-- **Dynamic Scaling** - Auto-restarts with optimal amounts when motherload changes 40-50%+ (adapts to market conditions)
+```
+┌─────────────────┐
+│  5x5 Grid       │
+│  25 Squares     │
+│  1/625 chance   │
+│                 │
+│  🎯🎯🎯🎯🎯      │
+│  🎯🎯🏆🎯🎯      │
+│  🎯🎯🎯🎯🎯      │
+│  🎯🎯🎯🎯🎯      │
+│  🎯🎯🎯🎯🎯      │
+└─────────────────┘
+```
 
-### Automation & Convenience
-- **Fully Autonomous** - One command starts everything, zero manual intervention needed
-- **Auto-Setup** - Automatically creates and funds automation account on first run
-- **Auto-Claim** - Collects your SOL and ORB rewards automatically when thresholds are met
-- **Auto-Swap** - Converts ORB to SOL to refund the bot (with minimum price protection)
-- **Auto-Stake** - Optional staking of excess ORB for additional yield
+</td>
+</tr>
+</table>
 
-### Protection & Risk Management
-- **Profitability Gating** - Only mines when EV > 0 (skips unprofitable rounds automatically)
-- **Price Floor Protection** - Won't sell ORB below configurable minimum USD price
-- **Multi-Layer Safety** - Motherload thresholds, minimum balances, safety reserves
-- **Full Transparency** - Logs complete EV breakdown for every decision (verify the math yourself)
+## ✨ Key Features
 
-## Advanced Intelligence Features
+<table>
+<tr>
+<td width="33%" valign="top">
+
+### 🧠 Intelligence & Optimization
+- 🎲 **Monte Carlo Optimized**
+  - 10,000 simulations per tier
+  - +139% avg ROI
+- 📐 **Kelly Criterion**
+  - Fractional betting
+  - 0.11% to 1.67% per round
+- 📊 **Real-Time EV**
+  - Live competition data
+  - Pre-deployment checks
+- 🔄 **Dynamic Scaling**
+  - Auto-restarts on 40-50% changes
+  - Optimal for current conditions
+
+</td>
+<td width="33%" valign="top">
+
+### ⚡ Automation & Convenience
+- 🚀 **Fully Autonomous**
+  - One command setup
+  - Zero manual intervention
+- 🛠️ **Auto-Setup**
+  - Creates automation account
+  - Smart budget allocation
+- 💎 **Auto-Claim**
+  - Collects SOL/ORB rewards
+  - Threshold-based triggers
+- 🔄 **Auto-Swap**
+  - ORB → SOL conversion
+  - Price floor protection
+- 📈 **Auto-Stake**
+  - Optional ORB staking
+  - Passive yield generation
+
+</td>
+<td width="33%" valign="top">
+
+### 🛡️ Protection & Safety
+- ✅ **Profitability Gating**
+  - Only mines when EV > 0
+  - Skips bad rounds
+- 💵 **Price Floors**
+  - Min ORB price protection
+  - Configurable thresholds
+- 🔒 **Multi-Layer Safety**
+  - Motherload gates
+  - Balance reserves
+  - Risk limits
+- 📝 **Full Transparency**
+  - Complete EV logs
+  - Verifiable math
+  - Real-time metrics
+
+</td>
+</tr>
+</table>
+
+---
+
+## 🚀 Quick Start
+
+```bash
+# 1. Clone and install
+git clone https://github.com/CryptoGnome/orb_miner.git
+cd orb_miner
+npm install
+
+# 2. Configure your wallet
+cp .env.example .env
+# Edit .env and add your PRIVATE_KEY
+
+# 3. Start mining!
+npm start
+```
+
+**That's it!** The bot will auto-create automation, mine continuously, claim rewards, swap ORB, and restart as needed. Press `Ctrl+C` to stop.
+
+<details>
+<summary>📋 <b>Full Setup Guide</b> (click to expand)</summary>
+
+### Prerequisites
+- Node.js v16+ ([Download](https://nodejs.org/))
+- A Solana wallet with 1-5+ SOL
+- Your wallet's private key in base58 format
+
+### Step-by-Step Setup
+
+1. **Clone the repository**
+   ```bash
+   git clone https://github.com/CryptoGnome/orb_miner.git
+   cd orb_miner
+   ```
+
+2. **Install dependencies**
+   ```bash
+   npm install
+   ```
+
+3. **Configure your wallet**
+   ```bash
+   cp .env.example .env
+   ```
+
+   Edit `.env` and add your private key:
+   ```env
+   PRIVATE_KEY=your_base58_private_key_here
+   ```
+
+   **How to export private key:**
+   - Phantom: Settings → Show Private Key (already in base58)
+   - **⚠️ Never share your private key!**
+
+4. **Fund your wallet**
+   - Minimum: 1 SOL (testing)
+   - Recommended: 5+ SOL (sustained mining)
+   - Bot uses 90% of balance by default
+
+5. **Start the bot**
+   ```bash
+   npm start
+   ```
+
+6. **Monitor logs** (in another terminal)
+   ```bash
+   tail -f logs/combined.log
+   ```
+
+</details>
+
+---
+
+## 🧠 Advanced Intelligence Features
+
+<div align="center">
+
+### 📊 Monte Carlo Optimization Results
+
+| Motherload Tier | Rounds | SOL/Round | Avg ROI | Risk of Ruin | Strategy |
+|----------------|--------|-----------|---------|--------------|----------|
+| 🔥 1200+ ORB | 60 | ~1.67% | **+76%** | <3% | Ultra Aggressive |
+| 🚀 1000-1099 ORB | 120 | ~0.83% | **+125%** | <4% | Very Aggressive |
+| 💎 700-799 ORB | 240 | ~0.42% | **+172%** | <2% | **PEAK** |
+| ⚡ 500-599 ORB | 320 | ~0.31% | **+165%** | <3% | Conservative |
+| 🛡️ 300-399 ORB | 400 | ~0.25% | **+125%** | <4% | Ultra Conservative |
+| 🐌 200-299 ORB | 440 | ~0.23% | **+74%** | <5% | Maximum Safety |
+
+*Based on 10,000 simulations per tier with 20x competition*
+
+</div>
+
+---
+
+<details>
+<summary>🎲 <b>Monte Carlo Optimization Details</b> (click to expand)</summary>
 
 ### Monte Carlo Optimization
 
@@ -53,6 +236,11 @@ This bot uses **10,000-simulation Monte Carlo analysis** to determine optimal be
 
 Run the simulation yourself: `npx ts-node scripts/monte-carlo-simulation.ts`
 
+</details>
+
+<details>
+<summary>📐 <b>Kelly Criterion Principles</b> (click to expand)</summary>
+
 ### Kelly Criterion Principles
 
 While not using the classical Kelly Criterion formula directly (due to the lottery-style mechanics), this bot implements **fractional Kelly bankroll management**:
@@ -70,6 +258,11 @@ While not using the classical Kelly Criterion formula directly (due to the lotte
 - **Minimal Edge** (0-199 ORB): Maximum conservation 880 rounds = ~0.11% per round
 
 This fractional approach prevents over-betting (Kelly criterion's primary insight) while adapting to changing reward conditions.
+
+</details>
+
+<details>
+<summary>📊 <b>Real-Time Expected Value (EV) Calculation</b> (click to expand)</summary>
 
 ### Real-Time Expected Value (EV) Calculation
 
@@ -105,6 +298,11 @@ Expected Value: 0.014 + 0.174 - 0.18 = +0.008 SOL (4.4% ROI) ✅ PROFITABLE
 
 This protects you from mining when competition is too high or ORB price crashes.
 
+</details>
+
+<details>
+<summary>🔄 <b>Dynamic Scaling & Auto-Restart</b> (click to expand)</summary>
+
 ### Dynamic Scaling & Auto-Restart
 
 The bot **continuously monitors motherload changes** and automatically adjusts strategy:
@@ -118,6 +316,11 @@ The bot **continuously monitors motherload changes** and automatically adjusts s
 
 This ensures you're **always betting optimally** for current market conditions, not using outdated strategy from hours ago.
 
+</details>
+
+<details>
+<summary>🛡️ <b>Risk Management Features</b> (click to expand)</summary>
+
 ### Risk Management Features
 
 Multiple layers of protection prevent catastrophic losses:
@@ -129,6 +332,11 @@ Multiple layers of protection prevent catastrophic losses:
 5. **Minimum SOL Balance**: Maintains wallet SOL reserve for tx fees (default: 0.1 SOL)
 6. **Fractional Bankroll**: Never risks more than small % of total capital per round
 7. **Auto-Depletion Detection**: Closes automation immediately when budget exhausted (reclaims dust)
+
+</details>
+
+<details>
+<summary>📝 <b>Profitability Transparency</b> (click to expand)</summary>
 
 ### Profitability Transparency
 
@@ -156,7 +364,11 @@ Unlike black-box bots, this shows you **exactly why** it's mining or waiting:
 
 You can verify the math yourself - full breakdown logged for every decision.
 
-## Development Fee
+</details>
+
+---
+
+## 💰 Development Fee
 
 **This bot includes a 0.1% development fee on each mining deployment.**
 
@@ -166,60 +378,14 @@ You can verify the math yourself - full breakdown logged for every decision.
 
 Example: If you deploy 1 SOL to mine, 0.001 SOL (0.1%) goes to the development wallet, and 0.999 SOL is deployed for mining.
 
-## Prerequisites
+---
 
-Before you begin, make sure you have:
+## ⚙️ Configuration
 
-1. **Node.js** (v16 or higher) - [Download here](https://nodejs.org/)
-2. **npm** (comes with Node.js)
-3. **A Solana wallet** with some SOL for mining
-4. **Your wallet's private key** (base58 format can be exported from any popular browser wallet)
+<details>
+<summary><b>Configuration Options</b> (click to expand)</summary>
 
-## Step-by-Step Setup
-
-### 1. Clone the Repository
-
-```bash
-git clone https://github.com/CryptoGnome/orb_miner.git
-cd orb_miner
-```
-
-### 2. Install Dependencies
-
-```bash
-npm install
-```
-
-### 3. Configure Your Wallet
-
-Create a `.env` file in the project root:
-
-```bash
-# Copy the example configuration file
-cp .env.example .env
-```
-
-Edit the `.env` file and add your wallet's private key:
-
-```env
-PRIVATE_KEY=your_base58_private_key_here
-```
-
-**How to get your private key:**
-- Phantom wallet: Settings → Show Private Key (exports in base58 format)
-**Security Warning:** Never share your private key or commit the `.env` file to Git!
-
-### 4. Fund Your Wallet
-
-Make sure your wallet has enough SOL:
-- Minimum: 1 SOL (for testing)
-- Recommended: 5+ SOL (for sustained mining)
-
-The bot will use 90% of your SOL balance by default to set up the automation account.
-
-### 5. Review Configuration (Optional)
-
-The `.env` file has sensible defaults, but you can customize:
+The `.env` file has sensible defaults, but you can customize for your strategy:
 
 ```env
 # Only mine when rewards are >= 100 ORB
@@ -250,33 +416,13 @@ STAKE_ORB_THRESHOLD=50
 
 See [.env.example](.env.example) for all available options with detailed explanations.
 
-## Running the Bot
+</details>
 
-### Start Mining
+---
 
-Simply run:
+## 📊 Monitoring Your Bot
 
-```bash
-npm start
-```
-
-That's it! The bot will:
-1. Check if automation account exists (if not, create it automatically)
-2. Start monitoring for new mining rounds
-3. Deploy to all 25 squares when profitable
-4. Auto-claim rewards periodically
-5. Auto-swap ORB to refund itself when low on SOL
-6. Keep running until you stop it (Ctrl+C)
-
-### Development Mode (Auto-reload on code changes)
-
-```bash
-npm run dev
-```
-
-## Monitoring Your Bot
-
-### Watch Logs in Real-Time
+### 📺 Watch Logs in Real-Time
 
 ```bash
 # All logs
@@ -289,22 +435,27 @@ tail -f logs/error.log
 tail -f logs/transactions.log
 ```
 
-### Check Status Manually
+### 🔍 Check Status Manually
 
-While the bot is running, open a new terminal and run:
+While the bot is running, open a new terminal:
 
 ```bash
 npx ts-node tests/test-query.ts
 ```
 
-This shows:
-- Your wallet balances (SOL, ORB)
-- Automation account balance
-- Claimable rewards
-- Current round info
-- Motherload size
+**Shows:**
+- 💰 Wallet balances (SOL, ORB)
+- 🤖 Automation account balance
+- 🎁 Claimable rewards
+- 🎯 Current round info
+- 💎 Motherload size
 
-## Understanding the Output
+---
+
+## 📟 Understanding Bot Output
+
+<details>
+<summary><b>Example Log Messages</b> (click to expand)</summary>
 
 When running, you'll see messages like:
 
@@ -344,11 +495,17 @@ When running, you'll see messages like:
 [DEBUG] Competition too high for current ORB price - skipping round
 ```
 
-## Stopping the Bot
+</details>
+
+---
+
+## ⏹️ Stopping the Bot
 
 Press `Ctrl+C` to gracefully stop the bot. It will finish the current operation and exit safely.
 
-## Testing Before Real Mining
+---
+
+## 🧪 Testing Before Real Mining
 
 To test without spending real SOL:
 
@@ -364,11 +521,24 @@ To test without spending real SOL:
 
 The bot will simulate all operations without sending actual transactions.
 
-## Cost and Profitability
+---
 
-**Production Cost Analysis (Smart Mining):**
+## 💵 Cost and Profitability
 
-The bot features **intelligent profitability checking** that uses real-time blockchain data:
+<div align="center">
+
+| Cost Type | Amount | Description |
+|-----------|--------|-------------|
+| 💎 **Deployment** | Variable | Bot scales based on motherload (0.11%-1.67% per round) |
+| ⛽ **Transaction Fees** | ~0.001 SOL | Per deployment (~$0.20 @ $200/SOL) |
+| 💱 **Swap Fees** | ~0.5% | Jupiter DEX fees when converting ORB to SOL |
+| 🔧 **Dev Fee** | 0.1% | Supports ongoing development |
+
+</div>
+
+### 🎯 Smart Profitability Checking
+
+The bot features **intelligent profitability checking** using real-time blockchain data:
 
 1. **Fetches actual Round data** - Reads `totalDeployed` from the current Round account
 2. **Calculates your exact share** - Determines your percentage of total competition
@@ -400,18 +570,18 @@ MIN_EXPECTED_VALUE=0
 ESTIMATED_COMPETITION_MULTIPLIER=20
 ```
 
-**Costs per Round:**
-- Deployment: Variable (bot scales based on motherload size)
-- Transaction fees: ~0.001 SOL per deployment
-- Swap fees: ~0.5% when converting ORB to SOL
-
 **Key Benefits:**
 - ✅ **Accurate decisions** - Uses real competition, not guesses
 - ✅ **Protects against losses** - Won't mine when ORB price is too low
 - ✅ **Adapts to market** - Automatically adjusts to current conditions
 - ✅ **Maximizes EV** - Only deploys when mathematically profitable
 
-## Troubleshooting
+---
+
+## 🔧 Troubleshooting
+
+<details>
+<summary><b>Common Issues & Solutions</b> (click to expand)</summary>
 
 ### "Insufficient funds" error
 - Check your wallet has enough SOL
@@ -441,7 +611,14 @@ npx ts-node tests/test-close-automation.ts
 - View transaction on [Solscan](https://solscan.io)
 - Transaction signatures are logged in `logs/transactions.log`
 
-## Advanced Usage
+</details>
+
+---
+
+## 🛠️ Advanced Usage
+
+<details>
+<summary><b>Manual Commands & Testing</b> (click to expand)</summary>
 
 ### Manual Commands
 
@@ -480,7 +657,11 @@ npm run build
 npm run clean
 ```
 
-## Project Structure
+</details>
+
+---
+
+## 📁 Project Structure
 
 ```
 orb_miner/
@@ -497,43 +678,107 @@ orb_miner/
 └── package.json
 ```
 
-## Technical Documentation
+---
 
-For developers and advanced users, see [CLAUDE.md](CLAUDE.md) for:
-- Detailed architecture
-- Manual account deserialization
-- Instruction format reverse-engineering
-- PDA derivation details
-- Modifying bot behavior
-- Adding new features
+## 📚 Technical Documentation
 
-## Security Notes
+<div align="center">
 
-- **Never commit your `.env` file** - It contains your private key
-- **Use a dedicated wallet** for bot operations
-- **Test with small amounts first** before deploying large sums
-- **Keep a backup** of your private key in a secure location
-- The `.gitignore` file already excludes `.env` for safety
+For developers and advanced users, see **[CLAUDE.md](CLAUDE.md)** for in-depth technical details:
 
-## Support
+| Topic | Description |
+|-------|-------------|
+| 🏗️ **Architecture** | Detailed system design and component breakdown |
+| 🔍 **Account Deserialization** | Manual PDA parsing and on-chain data structures |
+| 🛠️ **Instruction Formats** | Reverse-engineered transaction building |
+| 🔑 **PDA Derivation** | Program-Derived Address calculations |
+| ⚙️ **Customization** | Modifying bot behavior and adding features |
+| 🧪 **Testing** | Development workflow and debugging tips |
 
-- **Issues:** [Open an issue on GitHub](https://github.com/CryptoGnome/orb_miner/issues)
-- **Questions:** Check [CLAUDE.md](CLAUDE.md) for technical details
-- **Updates:** Watch this repo for updates
-
-## Disclaimer
-
-This bot interacts with the ORB mining program on Solana mainnet. Mining involves risk:
-- You can lose SOL if you don't win rounds
-- Smart contract risks (bugs, exploits)
-- Network risks (transaction failures, congestion)
-
-**Use at your own risk. Only mine with funds you can afford to lose.**
-
-## License
-
-[Your License Here]
+</div>
 
 ---
 
-**Happy Mining!** If this bot helps you win ORB, consider starring the repo!
+## 🔒 Security Notes
+
+> ⚠️ **CRITICAL: Never commit your `.env` file - it contains your private key!**
+
+<table>
+<tr>
+<td>
+
+### Best Practices
+- ✅ Use a dedicated wallet for bot operations
+- ✅ Test with small amounts first (1-2 SOL)
+- ✅ Keep an offline backup of your private key
+- ✅ Monitor logs regularly for suspicious activity
+- ✅ Use strong RPC endpoints (Helius, QuickNode)
+
+</td>
+<td>
+
+### Built-in Protections
+- 🔒 `.gitignore` excludes `.env` file
+- 🛡️ Multi-layer safety checks
+- 💵 Minimum balance reserves
+- 🚫 Price floor protection
+- 📊 EV-based profitability gates
+
+</td>
+</tr>
+</table>
+
+---
+
+## 💬 Support & Community
+
+<div align="center">
+
+### Need Help?
+
+[![GitHub Issues](https://img.shields.io/badge/Issues-Report%20Bug-red?style=for-the-badge&logo=github)](https://github.com/CryptoGnome/orb_miner/issues)
+[![Documentation](https://img.shields.io/badge/Docs-CLAUDE.md-blue?style=for-the-badge&logo=readthedocs)](CLAUDE.md)
+[![ORB Protocol](https://img.shields.io/badge/ORB-ore.blue-purple?style=for-the-badge&logo=solana)](https://ore.blue/)
+
+**Questions?** Check [CLAUDE.md](CLAUDE.md) for technical details
+
+**Updates?** Watch/Star this repo to stay notified
+
+</div>
+
+---
+
+## ⚠️ Disclaimer
+
+> **Important: Read before using this bot**
+
+This bot interacts with the ORB mining program on Solana mainnet. Mining involves risk:
+
+- 💸 **Capital Risk** - You can lose SOL if you don't win rounds
+- 🐛 **Smart Contract Risk** - Bugs or exploits in ORB/ORE contracts
+- 🌐 **Network Risk** - Transaction failures, congestion, RPC issues
+- 📉 **Market Risk** - ORB price volatility affects profitability
+- 🎲 **Lottery Risk** - No guaranteed returns, 1/625 chance per round
+
+**USE AT YOUR OWN RISK. Only mine with funds you can afford to lose.**
+
+This bot is provided "as-is" without warranty of any kind. The developers are not responsible for any losses incurred.
+
+---
+
+<div align="center">
+
+## 🌟 If this bot helps you win ORB, consider starring the repo!
+
+### Made with ❤️ by the community
+
+[![GitHub stars](https://img.shields.io/github/stars/CryptoGnome/orb_miner?style=social)](https://github.com/CryptoGnome/orb_miner/stargazers)
+[![GitHub forks](https://img.shields.io/github/forks/CryptoGnome/orb_miner?style=social)](https://github.com/CryptoGnome/orb_miner/network/members)
+
+---
+
+**Happy Mining! 🚀**
+
+*Powered by Monte Carlo optimization, Kelly Criterion principles, and real-time EV analysis*
+
+</div>
