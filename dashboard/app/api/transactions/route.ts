@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { ensureBotInitialized } from '@/lib/init-bot';
 import { getRecentTransactions } from '@bot/utils/database';
 
 export const dynamic = 'force-dynamic';
@@ -6,6 +7,8 @@ export const runtime = 'nodejs';
 
 export async function GET(request: NextRequest) {
   try {
+    await ensureBotInitialized();
+
     const searchParams = request.nextUrl.searchParams;
     const limit = parseInt(searchParams.get('limit') || '50', 10);
     const type = searchParams.get('type') || undefined;

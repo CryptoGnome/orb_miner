@@ -1,7 +1,9 @@
 import { NextResponse } from 'next/server';
+import { ensureBotInitialized } from '@/lib/init-bot';
 import { getBalanceHistory, getDailySummaries } from '@bot/utils/database';
 import sqlite3 from 'sqlite3';
 import { promisify } from 'util';
+import path from 'path';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -9,7 +11,8 @@ export const runtime = 'nodejs';
 // Get price history from database
 async function getPriceHistory(limit: number = 100): Promise<any[]> {
   return new Promise((resolve, reject) => {
-    const db = new sqlite3.Database('./data/orb_mining.db');
+    const dbPath = path.join(process.cwd(), '..', 'data', 'orb_mining.db');
+    const db = new sqlite3.Database(dbPath);
     const dbAll = promisify(db.all.bind(db));
 
     dbAll(
@@ -29,6 +32,8 @@ async function getPriceHistory(limit: number = 100): Promise<any[]> {
 
 export async function GET() {
   try {
+    await ensureBotInitialized();
+
     // Fetch analytics data in parallel
     const [balanceHistory, dailySummaries, priceHistory] = await Promise.all([
       getBalanceHistory(100),

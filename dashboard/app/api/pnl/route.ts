@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { ensureBotInitialized } from '@/lib/init-bot';
 import { getImprovedPnLSummary } from '@bot/utils/database';
 
 export const dynamic = 'force-dynamic';
@@ -6,6 +7,9 @@ export const runtime = 'nodejs';
 
 export async function GET() {
   try {
+    // Ensure bot utilities are initialized
+    await ensureBotInitialized();
+
     const pnlSummary = await getImprovedPnLSummary();
 
     return NextResponse.json({

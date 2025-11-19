@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { ensureBotInitialized } from '@/lib/init-bot';
 import { Connection, PublicKey } from '@solana/web3.js';
 import { config } from '@bot/utils/config';
 import { fetchBoard, fetchMiner, fetchStake, fetchTreasury } from '@bot/utils/accounts';
@@ -10,6 +11,9 @@ export const runtime = 'nodejs';
 
 export async function GET() {
   try {
+    // Ensure bot utilities are initialized
+    await ensureBotInitialized();
+
     const connection = new Connection(config.rpcUrl);
     const walletPublicKey = new PublicKey(config.walletPublicKey);
 
