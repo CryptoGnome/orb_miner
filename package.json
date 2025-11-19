@@ -4,9 +4,12 @@
   "description": "Automated ORB mining bot for Solana with Jupiter swap integration",
   "main": "dist/index.js",
   "scripts": {
-    "start": "ts-node src/index.ts",
+    "start": "concurrently --names \"BOT,DASHBOARD\" --prefix-colors \"cyan,magenta\" \"npm run start:bot\" \"npm run start:dashboard\"",
+    "start:bot": "ts-node src/index.ts",
+    "start:dashboard": "cd dashboard && npm run dev",
     "dev": "nodemon --exec ts-node src/index.ts",
     "build": "tsc",
+    "build:dashboard": "cd dashboard && npm run build",
     "clean": "rm -rf dist",
     "simulate": "ts-node scripts/monte-carlo-simulation.ts",
     "pnl:reconcile": "ts-node scripts/reconcile-pnl.ts",
@@ -37,6 +40,7 @@
   "devDependencies": {
     "@types/bn.js": "^5.2.0",
     "@types/node": "^20.12.12",
+    "concurrently": "^9.2.1",
     "nodemon": "^3.1.0",
     "ts-node": "^10.9.2",
     "typescript": "^5.4.5"
