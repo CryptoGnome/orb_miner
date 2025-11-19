@@ -86,6 +86,7 @@ function cleanupInFlightDeployments(currentRoundId?: number): void {
 let isRunning = true;
 let signalHandlersRegistered = false;
 let lastRewardsCheck = 0;
+let lastStakingRewardsCheck = 0;
 let lastStakeCheck = 0;
 let lastSwapCheck = 0;
 let lastBalanceSnapshot = 0;
@@ -543,9 +544,9 @@ async function captureBalanceSnapshot(): Promise<void> {
 }
 
 /**
- * Auto-claim: Check and claim rewards when thresholds are met
+ * Auto-claim mining rewards: Check and claim mining rewards when thresholds are met
  */
-async function autoClaimRewards(): Promise<void> {
+async function autoClaimMiningRewards(): Promise<void> {
   try {
     const now = Date.now();
     if (now - lastRewardsCheck < config.checkRewardsIntervalMs) {
@@ -553,7 +554,7 @@ async function autoClaimRewards(): Promise<void> {
     }
     lastRewardsCheck = now;
 
-    logger.debug('Checking rewards for auto-claim...');
+    logger.debug('Checking mining rewards for auto-claim...');
     const wallet = getWallet();
     const instructions: TransactionInstruction[] = [];
 
@@ -576,7 +577,7 @@ async function autoClaimRewards(): Promise<void> {
       }
     }
 
-    // Send mining claims first (if any)
+    // Send mining claims (if any)
     if (instructions.length > 0 && !config.dryRun) {
       const signature = await sendAndConfirmTransaction(instructions, 'Auto-Claim Mining');
       ui.success(`Claimed mining rewards`);
@@ -615,8 +616,26 @@ async function autoClaimRewards(): Promise<void> {
       // Cleanup in-flight deployments since on-chain state just updated
       cleanupInFlightDeployments();
     }
+  } catch (error) {
+    logger.error('Auto-claim mining rewards failed:', error);
+  }
+}
 
-    // Check staking rewards (separate transaction to avoid failing mining claims)
+/**
+ * Auto-claim staking rewards: Check and claim staking rewards when thresholds are met
+ */
+async function autoClaimStakingRewards(): Promise<void> {
+  try {
+    const now = Date.now();
+    if (now - lastStakingRewardsCheck < config.checkStakingRewardsIntervalMs) {
+      return;
+    }
+    lastStakingRewardsCheck = now;
+
+    logger.debug('Checking staking rewards for auto-claim...');
+    const wallet = getWallet();
+
+    // Check staking rewards
     const stake = await fetchStake(wallet.publicKey);
     if (stake) {
       const stakedAmount = Number(stake.balance) / 1e9;
@@ -630,6 +649,19 @@ async function autoClaimRewards(): Promise<void> {
           ui.success(`Claimed staking rewards`);
           logger.debug(`Attempted to claim ${config.autoClaimStakingOrbThreshold} ORB from staking`);
           logger.debug(`Transaction: ${signature}`);
+
+          // Record staking claim transaction
+          try {
+            await recordTransaction({
+              type: 'claim_orb',
+              signature,
+              orbAmount: config.autoClaimStakingOrbThreshold,
+              status: 'success',
+              notes: 'Staking rewards',
+            });
+          } catch (error) {
+            logger.error('Failed to record staking claim:', error);
+          }
         } catch (error: any) {
           logger.debug(`Staking claim not ready (insufficient rewards from buybacks): ${error.message || error}`);
         }
@@ -638,7 +670,7 @@ async function autoClaimRewards(): Promise<void> {
       logger.debug('No stake account found (not staking)');
     }
   } catch (error) {
-    logger.error('Auto-claim failed:', error);
+    logger.error('Auto-claim staking rewards failed:', error);
   }
 }
 
@@ -1399,7 +1431,8 @@ export async function smartBotCommand(): Promise<void> {
 
           if (remainingRounds >= 2) {
             // Normal operations: do claims, stakes, swaps, and balance snapshots
-            await autoClaimRewards();
+            await autoClaimMiningRewards();
+            await autoClaimStakingRewards();
             await autoStakeOrb();
             await autoSwapCheck();
             await captureBalanceSnapshot();
@@ -1410,7 +1443,8 @@ export async function smartBotCommand(): Promise<void> {
         } else {
           // No automation account (will recreate on next round)
           // Still do periodic operations since we're not deploying
-          await autoClaimRewards();
+          await autoClaimMiningRewards();
+          await autoClaimStakingRewards();
           await autoStakeOrb();
           await autoSwapCheck();
           await captureBalanceSnapshot();

@@ -36,6 +36,8 @@ export interface Config {
   autoClaimSolThreshold: number;
   autoClaimOrbThreshold: number;
   autoClaimStakingOrbThreshold: number;
+  checkRewardsIntervalMs: number;
+  checkStakingRewardsIntervalMs: number;
 
   // Claim Settings (legacy - for backward compatibility)
   autoClaimEnabled: boolean;
@@ -44,7 +46,6 @@ export interface Config {
   claimType: 'sol' | 'orb' | 'both';
   claimFromMining: boolean;
   claimFromStaking: boolean;
-  checkRewardsIntervalMs: number;
 
   // Smart Bot - Auto-Swap Settings
   autoSwapEnabled: boolean;
@@ -140,6 +141,8 @@ export function loadConfig(): Config {
       autoClaimSolThreshold: getEnvNumber('AUTO_CLAIM_SOL_THRESHOLD', 0.1),
       autoClaimOrbThreshold: getEnvNumber('AUTO_CLAIM_ORB_THRESHOLD', 1.0),
       autoClaimStakingOrbThreshold: getEnvNumber('AUTO_CLAIM_STAKING_ORB_THRESHOLD', 0.5),
+      checkRewardsIntervalMs: getEnvNumber('CHECK_REWARDS_INTERVAL_MS', 300000),
+      checkStakingRewardsIntervalMs: getEnvNumber('CHECK_STAKING_REWARDS_INTERVAL_MS', 600000),
 
       // Claim Settings (legacy - for backward compatibility)
       autoClaimEnabled: getEnvBoolean('AUTO_CLAIM_ENABLED', true),
@@ -148,7 +151,6 @@ export function loadConfig(): Config {
       claimType: getEnv('CLAIM_TYPE', 'both') as Config['claimType'],
       claimFromMining: getEnvBoolean('CLAIM_FROM_MINING', true),
       claimFromStaking: getEnvBoolean('CLAIM_FROM_STAKING', true),
-      checkRewardsIntervalMs: getEnvNumber('CHECK_REWARDS_INTERVAL_MS', 300000),
 
       // Smart Bot - Auto-Swap Settings
       autoSwapEnabled: getEnvBoolean('AUTO_SWAP_ENABLED', true),
