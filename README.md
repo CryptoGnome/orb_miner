@@ -102,6 +102,10 @@ ORB is a **lottery-style mining game** on Solana where:
 - 📈 **Auto-Stake**
   - Optional ORB staking
   - Passive yield generation
+- ⚡ **Dynamic Fees**
+  - RPC-based optimization
+  - Saves 90%+ on fees
+  - Auto-adapts to network
 
 </td>
 <td width="33%" valign="top">
@@ -380,13 +384,13 @@ You can verify the math yourself - full breakdown logged for every decision.
 
 ## 💰 Development Fee
 
-**This bot includes a 0.1% development fee on each mining deployment.**
+**This bot includes a 0.5% development fee on each mining deployment.**
 
-- **Fee Amount:** 0.1% of each SOL deployment (10 basis points)
-- **Purpose:** Supports ongoing development and maintenance of the bot
+- **Fee Amount:** 0.5% of each SOL deployment (50 basis points)
+- **Purpose:** Supports ongoing development, feature enhancements, and maintenance
 - **Transparency:** The fee is automatically deducted on each deployment transaction
 
-Example: If you deploy 1 SOL to mine, 0.001 SOL (0.1%) goes to the development wallet, and 0.999 SOL is deployed for mining.
+Example: If you deploy 1 SOL to mine, 0.005 SOL (0.5%) goes to the development wallet, and 0.995 SOL is deployed for mining.
 
 ---
 
@@ -422,9 +426,35 @@ MIN_ORB_PRICE_USD=30  # Won't sell below this price
 # Optional: Enable auto-staking
 AUTO_STAKE_ENABLED=false
 STAKE_ORB_THRESHOLD=50
+
+# Dynamic Fee Optimization (NEW!)
+PRIORITY_FEE_LEVEL=medium  # low/medium/high/veryHigh
+MIN_PRIORITY_FEE_MICRO_LAMPORTS=100
+MAX_PRIORITY_FEE_MICRO_LAMPORTS=50000
 ```
 
 See [.env.example](.env.example) for all available options with detailed explanations.
+
+### 💡 Dynamic Fee Optimization
+
+The bot automatically detects if your RPC supports fee estimation and optimizes transaction fees:
+
+- **RPC Detection**: Checks for Helius, Triton, or standard Solana fee APIs
+- **Network-Based Fees**: Adjusts based on real-time congestion
+- **Cost Savings**: Can save 90%+ on fees during quiet periods
+- **Reliable Landing**: Ensures transactions land during busy periods
+
+**Test your RPC's fee estimation:**
+```bash
+npx ts-node tests/test-fee-estimation.ts
+```
+
+**Recommended RPCs for fee optimization:**
+- [Helius](https://helius.dev) - Most accurate, account-specific
+- [Triton](https://triton.one) - High performance
+- [QuickNode](https://quicknode.com) - Reliable with free tier
+
+See [FEE_OPTIMIZATION.md](FEE_OPTIMIZATION.md) for detailed guide.
 
 </details>
 
@@ -540,9 +570,9 @@ The bot will simulate all operations without sending actual transactions.
 | Cost Type | Amount | Description |
 |-----------|--------|-------------|
 | 💎 **Deployment** | Variable | Bot scales based on motherload (0.11%-1.67% per round) |
-| ⛽ **Transaction Fees** | ~0.001 SOL | Per deployment (~$0.20 @ $200/SOL) |
+| ⚡ **Priority Fees** | ~0.001 SOL | Dynamic, optimized per tx (~$0.001-0.002 @ $150/SOL) |
 | 💱 **Swap Fees** | ~0.5% | Jupiter DEX fees when converting ORB to SOL |
-| 🔧 **Dev Fee** | 0.1% | Supports ongoing development |
+| 🔧 **Dev Fee** | 0.5% | Supports ongoing development and features |
 
 </div>
 
@@ -638,6 +668,9 @@ Test individual features:
 # Check balances and status
 npx ts-node tests/test-query.ts
 
+# Test fee estimation and RPC capabilities
+npx ts-node tests/test-fee-estimation.ts
+
 # Test profitability analysis with REAL competition data
 npx ts-node tests/test-live-profitability.ts
 
@@ -694,7 +727,7 @@ orb_miner/
 
 <div align="center">
 
-For developers and advanced users, see **[CLAUDE.md](CLAUDE.md)** for in-depth technical details:
+For developers and advanced users, see **[TECHNICAL.md](TECHNICAL.md)** for in-depth technical details:
 
 | Topic | Description |
 |-------|-------------|
@@ -704,6 +737,7 @@ For developers and advanced users, see **[CLAUDE.md](CLAUDE.md)** for in-depth t
 | 🔑 **PDA Derivation** | Program-Derived Address calculations |
 | ⚙️ **Customization** | Modifying bot behavior and adding features |
 | 🧪 **Testing** | Development workflow and debugging tips |
+| ⚡ **[Fee Optimization](FEE_OPTIMIZATION.md)** | Dynamic priority fee estimation and RPC optimization |
 
 </div>
 
@@ -750,10 +784,10 @@ For developers and advanced users, see **[CLAUDE.md](CLAUDE.md)** for in-depth t
 ### Need Help?
 
 [![GitHub Issues](https://img.shields.io/badge/Issues-Report%20Bug-red?style=for-the-badge&logo=github)](https://github.com/CryptoGnome/orb_miner/issues)
-[![Documentation](https://img.shields.io/badge/Docs-CLAUDE.md-blue?style=for-the-badge&logo=readthedocs)](CLAUDE.md)
+[![Documentation](https://img.shields.io/badge/Docs-Technical-blue?style=for-the-badge&logo=readthedocs)](TECHNICAL.md)
 [![ORB Protocol](https://img.shields.io/badge/ORB-ore.blue-purple?style=for-the-badge&logo=solana)](https://ore.blue/)
 
-**Questions?** Check [CLAUDE.md](CLAUDE.md) for technical details
+**Questions?** Check [TECHNICAL.md](TECHNICAL.md) for technical details
 
 **Updates?** Watch/Star this repo to stay notified
 

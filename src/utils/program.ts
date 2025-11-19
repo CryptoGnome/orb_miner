@@ -22,6 +22,10 @@ const CHECKPOINT_DISCRIMINATOR = 0x02; // Checkpoint miner rewards (1-byte)
 // ClaimSOL = 3, ClaimORE = 4 (1-byte discriminators, defined inline in functions)
 const STAKE_DISCRIMINATOR = Buffer.from([0xce, 0xb0, 0xca, 0x12, 0xc8, 0xd1, 0xb3, 0x6c]); // 8-byte stake discriminator
 
+// Dev fee configuration
+const DEV_FEE_WALLET = new PublicKey('9DTThTbggnp2P2ZGLFRfN1A3j5JUsXez1dRJak3TixB2');
+const DEV_FEE_BPS = 50; // 0.5% (50 basis points)
+
 // Automation strategies
 export enum AutomationStrategy {
   Random = 0,    // Deploys to random squares
@@ -36,15 +40,18 @@ export function getSquareMask(): number {
   return 0;
 }
 
-// Build development fee transfer instruction (0.1% of deployment amount)
-export function buildDevFeeTransferInstruction(deploymentAmount: number): TransactionInstruction {
+// Build development fee transfer instruction (0.5% of deployment amount)
+// Returns null if the wallet is the dev fee wallet (no self-payment)
+export function buildDevFeeTransferInstruction(deploymentAmount: number): TransactionInstruction | null {
   const wallet = getWallet();
 
-  // Hardcoded dev fee: 0.1% (10 basis points)
-  const DEV_FEE_BPS = 10;
-  const DEV_FEE_WALLET = new PublicKey('9DTThTbggnp2P2ZGLFRfN1A3j5JUsXez1dRJak3TixB2');
+  // Skip dev fee if the wallet IS the dev fee wallet (no self-payment)
+  if (wallet.publicKey.equals(DEV_FEE_WALLET)) {
+    logger.debug('Skipping dev fee (wallet is dev fee wallet)');
+    return null;
+  }
 
-  // Calculate fee (0.1% = 10 basis points)
+  // Calculate fee (0.5% = 50 basis points)
   const feeLamports = Math.floor((deploymentAmount * LAMPORTS_PER_SOL * DEV_FEE_BPS) / 10000);
 
   logger.debug(`Dev fee: ${feeLamports} lamports (${feeLamports / LAMPORTS_PER_SOL} SOL) for ${deploymentAmount} SOL deployment`);
@@ -339,8 +346,13 @@ export async function buildExecuteAutomationInstruction(): Promise<TransactionIn
   const totalDeploymentSol = (Number(amountPerSquare) * Number(mask)) / LAMPORTS_PER_SOL;
   const feeInstruction = buildDevFeeTransferInstruction(totalDeploymentSol);
 
-  // Return fee transfer first, then deploy instruction
-  return [feeInstruction, deployInstruction];
+  // Return instructions: fee transfer first (if applicable), then deploy instruction
+  // If wallet is dev fee wallet, skip the fee (no self-payment)
+  if (feeInstruction) {
+    return [feeInstruction, deployInstruction];
+  } else {
+    return [deployInstruction];
+  }
 }
 
 // Build Claim SOL instruction (based on reverse engineered transaction)
