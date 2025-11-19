@@ -107,6 +107,15 @@ async function createTables(): Promise<void> {
       created_at INTEGER DEFAULT (strftime('%s', 'now'))
     )`,
 
+    // Motherload history table - track motherload changes over time
+    `CREATE TABLE IF NOT EXISTS motherload_history (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      timestamp INTEGER NOT NULL,
+      motherload REAL NOT NULL,
+      round_id INTEGER,
+      created_at INTEGER DEFAULT (strftime('%s', 'now'))
+    )`,
+
     // Indexes for faster queries
     `CREATE INDEX IF NOT EXISTS idx_transactions_timestamp ON transactions(timestamp)`,
     `CREATE INDEX IF NOT EXISTS idx_transactions_type ON transactions(type)`,
@@ -114,6 +123,7 @@ async function createTables(): Promise<void> {
     `CREATE INDEX IF NOT EXISTS idx_balances_timestamp ON balances(timestamp)`,
     `CREATE INDEX IF NOT EXISTS idx_prices_timestamp ON prices(timestamp)`,
     `CREATE INDEX IF NOT EXISTS idx_in_flight_resolved ON in_flight_deployments(resolved)`,
+    `CREATE INDEX IF NOT EXISTS idx_motherload_timestamp ON motherload_history(timestamp)`,
   ];
 
   for (const sql of tables) {
@@ -939,4 +949,149 @@ export async function getTotalInFlightSol(): Promise<number> {
   `);
 
   return result?.total || 0;
+}
+
+// ============================================================================
+// Motherload Tracking Functions
+// ============================================================================
+
+export interface MotherloadRecord {
+  id?: number;
+  timestamp: number;
+  motherload: number;
+  roundId?: number;
+}
+
+/**
+ * Record motherload value at a point in time
+ */
+export async function recordMotherload(motherload: number, roundId?: number): Promise<void> {
+  const sql = `
+    INSERT INTO motherload_history (timestamp, motherload, round_id)
+    VALUES (?, ?, ?)
+  `;
+
+  const params = [Date.now(), motherload, roundId || null];
+  await runQuery(sql, params);
+  logger.debug(`Recorded motherload: ${motherload} ORB (Round ${roundId || 'N/A'})`);
+}
+
+/**
+ * Get motherload history for a time period
+ */
+export async function getMotherloadHistory(
+  limit: number = 100,
+  startTimestamp?: number,
+  endTimestamp?: number
+): Promise<MotherloadRecord[]> {
+  let whereConditions = [];
+  let params: any[] = [];
+
+  if (startTimestamp) {
+    whereConditions.push('timestamp >= ?');
+    params.push(startTimestamp);
+  }
+
+  if (endTimestamp) {
+    whereConditions.push('timestamp <= ?');
+    params.push(endTimestamp);
+  }
+
+  const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
+
+  const sql = `
+    SELECT id, timestamp, motherload, round_id as roundId
+    FROM motherload_history
+    ${whereClause}
+    ORDER BY timestamp DESC
+    LIMIT ?
+  `;
+
+  params.push(limit);
+
+  const rows = await allQuery<any>(sql, params);
+  return rows.map(row => ({
+    id: row.id,
+    timestamp: row.timestamp,
+    motherload: row.motherload,
+    roundId: row.roundId,
+  }));
+}
+
+/**
+ * Get latest motherload value
+ */
+export async function getLatestMotherload(): Promise<MotherloadRecord | null> {
+  const sql = `
+    SELECT id, timestamp, motherload, round_id as roundId
+    FROM motherload_history
+    ORDER BY timestamp DESC
+    LIMIT 1
+  `;
+
+  const row = await getQuery<any>(sql);
+  if (!row) return null;
+
+  return {
+    id: row.id,
+    timestamp: row.timestamp,
+    motherload: row.motherload,
+    roundId: row.roundId,
+  };
+}
+
+/**
+ * Get motherload statistics for a time period
+ */
+export async function getMotherloadStats(
+  startTimestamp?: number,
+  endTimestamp?: number
+): Promise<{
+  min: number;
+  max: number;
+  avg: number;
+  current: number;
+  count: number;
+}> {
+  let whereConditions = [];
+  let params: any[] = [];
+
+  if (startTimestamp) {
+    whereConditions.push('timestamp >= ?');
+    params.push(startTimestamp);
+  }
+
+  if (endTimestamp) {
+    whereConditions.push('timestamp <= ?');
+    params.push(endTimestamp);
+  }
+
+  const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
+
+  const sql = `
+    SELECT
+      MIN(motherload) as min,
+      MAX(motherload) as max,
+      AVG(motherload) as avg,
+      COUNT(*) as count
+    FROM motherload_history
+    ${whereClause}
+  `;
+
+  const stats = await getQuery<{
+    min: number;
+    max: number;
+    avg: number;
+    count: number;
+  }>(sql, params);
+
+  const latest = await getLatestMotherload();
+
+  return {
+    min: stats?.min || 0,
+    max: stats?.max || 0,
+    avg: stats?.avg || 0,
+    current: latest?.motherload || 0,
+    count: stats?.count || 0,
+  };
 }

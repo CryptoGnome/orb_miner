@@ -36,6 +36,7 @@ import {
   cleanupOldInFlightDeployments,
   getBaselineBalance,
   setBaselineBalance,
+  recordMotherload,
 } from '../utils/database';
 import {
   getCompletePnLSummary,
@@ -1070,6 +1071,13 @@ async function autoMineRound(automationInfo: any): Promise<boolean> {
     // Check motherload threshold FIRST - no point checkpointing if we're not going to mine
     const treasury = await fetchTreasury();
     const motherloadOrb = Number(treasury.motherlode) / 1e9;
+
+    // Record motherload to database for tracking/analytics
+    try {
+      await recordMotherload(motherloadOrb, board.roundId.toNumber());
+    } catch (error) {
+      logger.debug('Failed to record motherload:', error);
+    }
 
     if (motherloadOrb < config.motherloadThreshold) {
       ui.info(`⏸️  Motherload (${motherloadOrb.toFixed(2)} ORB) below threshold (${config.motherloadThreshold} ORB) - waiting...`);

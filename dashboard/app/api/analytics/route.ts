@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { ensureBotInitialized } from '@/lib/init-bot';
-import { getDailySummaries } from '@bot/utils/database';
+import { getDailySummaries, getMotherloadHistory, getMotherloadStats } from '@bot/utils/database';
 import { getBalanceHistory } from '@bot/utils/pnl';
 import sqlite3 from 'sqlite3';
 import path from 'path';
@@ -34,10 +34,12 @@ export async function GET() {
     await ensureBotInitialized();
 
     // Fetch analytics data in parallel
-    const [balanceHistory, dailySummaries, priceHistory] = await Promise.all([
+    const [balanceHistory, dailySummaries, priceHistory, motherloadHistory, motherloadStats] = await Promise.all([
       getBalanceHistory(100),
       getDailySummaries(30),
       getPriceHistory(100),
+      getMotherloadHistory(500), // Get more history for better chart resolution
+      getMotherloadStats(), // Get overall stats
     ]);
 
     return NextResponse.json({
@@ -45,6 +47,8 @@ export async function GET() {
       balanceHistory, // Already in chronological order from pnl module
       dailySummaries,
       priceHistory,
+      motherloadHistory: motherloadHistory.reverse(), // Reverse to chronological order
+      motherloadStats,
     });
   } catch (error) {
     console.error('Error fetching analytics:', error);
