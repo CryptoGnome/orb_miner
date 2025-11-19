@@ -2,7 +2,6 @@ import { NextResponse } from 'next/server';
 import { ensureBotInitialized } from '@/lib/init-bot';
 import { getBalanceHistory, getDailySummaries } from '@bot/utils/database';
 import sqlite3 from 'sqlite3';
-import { promisify } from 'util';
 import path from 'path';
 
 export const dynamic = 'force-dynamic';
@@ -13,20 +12,19 @@ async function getPriceHistory(limit: number = 100): Promise<any[]> {
   return new Promise((resolve, reject) => {
     const dbPath = path.join(process.cwd(), '..', 'data', 'orb_mining.db');
     const db = new sqlite3.Database(dbPath);
-    const dbAll = promisify(db.all.bind(db));
 
-    dbAll(
+    db.all(
       `SELECT * FROM prices ORDER BY timestamp DESC LIMIT ?`,
-      [limit]
-    )
-      .then((rows) => {
+      [limit],
+      (err, rows) => {
         db.close();
-        resolve((rows as any[]).reverse());
-      })
-      .catch((err) => {
-        db.close();
-        reject(err);
-      });
+        if (err) {
+          reject(err);
+        } else {
+          resolve((rows as any[]).reverse());
+        }
+      }
+    );
   });
 }
 
