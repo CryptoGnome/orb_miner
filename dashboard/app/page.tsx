@@ -51,10 +51,10 @@ export default function Home() {
     );
   }
 
-  const netPnL = pnl?.netDifference || 0;
-  const totalIncome = pnl?.incomeBreakdown?.totalIncome || 0;
-  const totalExpenses = pnl?.expenseBreakdown?.totalExpenses || 0;
-  const roi = pnl?.roi || 0;
+  const netPnL = pnl?.netProfitTotal || 0;
+  const totalIncome = pnl?.totalIncome || 0;
+  const totalExpenses = pnl?.totalExpenses || 0;
+  const roi = pnl?.roiPercent || 0;
 
   return (
     <DashboardLayout>
@@ -126,7 +126,7 @@ export default function Home() {
             />
             <StatusCard
               title="Staking Rewards"
-              value={`${status?.claimable?.stakingRewards?.toFixed(2) || '0'} ORB`}
+              value={`${(status?.claimable?.stakingRewardsSol || 0).toFixed(4)} SOL + ${(status?.claimable?.stakingRewardsOrb || 0).toFixed(2)} ORB`}
               description="From staked ORB"
               icon={Activity}
             />
@@ -146,8 +146,8 @@ export default function Home() {
               icon={Activity}
             />
             <StatusCard
-              title="Motherload"
-              value={`${status?.round?.motherload?.toFixed(2) || '0'} ORB`}
+              title="Motherlode"
+              value={`${status?.round?.motherlode?.toFixed(2) || '0'} ORB`}
               description="Total prize pool"
               icon={Zap}
               neonGlow
