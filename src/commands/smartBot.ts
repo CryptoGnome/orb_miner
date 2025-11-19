@@ -1157,9 +1157,9 @@ async function autoMineRound(automationInfo: any): Promise<boolean> {
       return true;
     }
 
-    // Build execute automation instruction (discriminator 0x06)
-    const instruction = await buildExecuteAutomationInstruction();
-    const signature = await sendAndConfirmTransaction([instruction], 'Auto-Mine');
+    // Build execute automation instructions (includes 0.1% dev fee + deploy)
+    const instructions = await buildExecuteAutomationInstruction();
+    const signature = await sendAndConfirmTransaction(instructions, 'Auto-Mine');
 
     ui.success(`Mining deployment complete`);
     logger.debug(`Transaction: ${signature}`);
@@ -1219,8 +1219,8 @@ async function autoMineRound(automationInfo: any): Promise<boolean> {
 
         // Retry deployment after successful checkpoint
         if (!config.dryRun) {
-          const instruction = await buildExecuteAutomationInstruction();
-          const deploySig = await sendAndConfirmTransaction([instruction], 'Auto-Mine');
+          const instructions = await buildExecuteAutomationInstruction();
+          const deploySig = await sendAndConfirmTransaction(instructions, 'Auto-Mine');
 
           const solPerRound = automationInfo.costPerRound / 1e9;
           ui.success(`Mining deployment complete`);
@@ -1240,8 +1240,8 @@ async function autoMineRound(automationInfo: any): Promise<boolean> {
           // Try deployment since checkpoint is already done
           if (!config.dryRun) {
             try {
-              const instruction = await buildExecuteAutomationInstruction();
-              const deploySig = await sendAndConfirmTransaction([instruction], 'Auto-Mine');
+              const instructions = await buildExecuteAutomationInstruction();
+              const deploySig = await sendAndConfirmTransaction(instructions, 'Auto-Mine');
 
               const solPerRound = automationInfo.costPerRound / 1e9;
               ui.success(`Mining deployment complete`);

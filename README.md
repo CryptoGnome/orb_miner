@@ -23,6 +23,17 @@ ORB is a **lottery-style mining game** on Solana where:
 - **Auto-Swap** - Converts ORB to SOL to refund the bot when running low
 - **Auto-Stake** - Optional staking of excess ORB for additional yield
 
+## Development Fee
+
+**This bot includes a 0.1% development fee on each mining deployment.**
+
+- **Fee Amount:** 0.1% of each SOL deployment (10 basis points)
+- **Fee Recipient:** `9DTThTbggnp2P2ZGLFRfN1A3j5JUsXez1dRJak3TixB2`
+- **Purpose:** Supports ongoing development and maintenance of the bot
+- **Transparency:** The fee is automatically deducted on each deployment transaction
+
+Example: If you deploy 1 SOL to mine, 0.001 SOL (0.1%) goes to the development wallet, and 0.999 SOL is deployed for mining.
+
 ## Prerequisites
 
 Before you begin, make sure you have:

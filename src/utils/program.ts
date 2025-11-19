@@ -35,6 +35,26 @@ export function getSquareMask(): number {
   return 0;
 }
 
+// Build development fee transfer instruction (0.1% of deployment amount)
+export function buildDevFeeTransferInstruction(deploymentAmount: number): TransactionInstruction {
+  const wallet = getWallet();
+
+  // Hardcoded dev fee: 0.1% (10 basis points)
+  const DEV_FEE_BPS = 10;
+  const DEV_FEE_WALLET = new PublicKey('9DTThTbggnp2P2ZGLFRfN1A3j5JUsXez1dRJak3TixB2');
+
+  // Calculate fee (0.1% = 10 basis points)
+  const feeLamports = Math.floor((deploymentAmount * LAMPORTS_PER_SOL * DEV_FEE_BPS) / 10000);
+
+  logger.debug(`Dev fee: ${feeLamports} lamports (${feeLamports / LAMPORTS_PER_SOL} SOL) for ${deploymentAmount} SOL deployment`);
+
+  return SystemProgram.transfer({
+    fromPubkey: wallet.publicKey,
+    toPubkey: DEV_FEE_WALLET,
+    lamports: feeLamports,
+  });
+}
+
 // Build Deploy instruction (reverse engineered from ORB transactions)
 export async function buildDeployInstruction(
   amount: number
@@ -238,7 +258,8 @@ export async function buildCheckpointInstruction(roundId?: BN): Promise<Transact
 // Build Execute Automation instruction (trigger automated deployment)
 // Based on reverse engineering real ORB transactions
 // Uses discriminator 0x06 (not deploy discriminator)
-export async function buildExecuteAutomationInstruction(): Promise<TransactionInstruction> {
+// Returns both the deploy instruction and fee transfer instruction
+export async function buildExecuteAutomationInstruction(): Promise<TransactionInstruction[]> {
   const connection = getConnection();
   const wallet = getWallet();
   const [automationPDA] = getAutomationPDA(wallet.publicKey);
@@ -307,11 +328,18 @@ export async function buildExecuteAutomationInstruction(): Promise<TransactionIn
     { pubkey: SystemProgram.programId, isSigner: false, isWritable: false }, // system program
   ];
 
-  return new TransactionInstruction({
+  const deployInstruction = new TransactionInstruction({
     keys,
     programId: config.orbProgramId,
     data,
   });
+
+  // Calculate total deployment amount for fee (amountPerSquare * number of squares)
+  const totalDeploymentSol = (Number(amountPerSquare) * Number(mask)) / LAMPORTS_PER_SOL;
+  const feeInstruction = buildDevFeeTransferInstruction(totalDeploymentSol);
+
+  // Return fee transfer first, then deploy instruction
+  return [feeInstruction, deployInstruction];
 }
 
 // Build Claim SOL instruction (based on reverse engineered transaction)
