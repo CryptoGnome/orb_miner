@@ -120,61 +120,79 @@ function setupSignalHandlers() {
  * Strategy: As motherload grows, deploy MORE per round (fewer total rounds, higher amount per square)
  * This maximizes EV when rewards are high while preserving capital at lower motherloads.
  *
- * Tiers (CONSERVATIVE - focus on capital preservation):
- * - 0-199 ORB: Don't mine (below minimum threshold)
- * - 200-299 ORB: Ultra conservative (180 rounds, very small amounts)
- * - 300-399 ORB: Very conservative (160 rounds)
- * - 400-499 ORB: Conservative (140 rounds)
- * - 500-599 ORB: Moderate-Conservative (120 rounds)
- * - 600-699 ORB: Moderate (100 rounds)
- * - 700-899 ORB: Moderate-Aggressive (80 rounds)
- * - 900-999 ORB: Aggressive (60 rounds)
- * - 1000-1499 ORB: Very aggressive (40 rounds)
- * - 1500+ ORB: Ultra aggressive (25 rounds, very large amounts)
+ * Tiers (HIGHLY CONSERVATIVE - focus on capital preservation):
+ * - 0-199 ORB: Extreme conservation (440 rounds, ~0.23% per round) - half deployment of 200-299 tier
+ * - 200-299 ORB: Ultra conservative (220 rounds, ~0.45% per round)
+ * - 300-399 ORB: Very conservative (200 rounds, 0.5% per round)
+ * - 400-499 ORB: Conservative (180 rounds, ~0.56% per round)
+ * - 500-599 ORB: Moderate-Conservative (160 rounds, ~0.63% per round)
+ * - 600-699 ORB: Moderate (140 rounds, ~0.71% per round)
+ * - 700-799 ORB: Moderate-Aggressive (120 rounds, ~0.83% per round)
+ * - 800-899 ORB: Aggressive (100 rounds, 1% per round)
+ * - 900-999 ORB: Aggressive (80 rounds, ~1.25% per round)
+ * - 1000-1099 ORB: Very aggressive (60 rounds, ~1.67% per round)
+ * - 1100-1199 ORB: Very aggressive (45 rounds, ~2.2% per round)
+ * - 1200+ ORB: Ultra aggressive (30 rounds, ~3.3% per round)
  */
 function calculateTargetRounds(motherloadOrb: number): number {
-  // Ultra aggressive for massive motherloads (1500+ ORB)
-  if (motherloadOrb >= 1500) {
-    return 25; // 4% of budget per round - huge bets on huge rewards
+  // Ultra aggressive for massive motherloads (1200+ ORB)
+  if (motherloadOrb >= 1200) {
+    return 30; // ~3.3% of budget per round - huge bets on huge rewards
   }
 
-  // Very aggressive (1000-1499 ORB)
+  // Very aggressive (1100-1199 ORB)
+  if (motherloadOrb >= 1100) {
+    return 45; // ~2.2% of budget per round
+  }
+
+  // Very aggressive (1000-1099 ORB)
   if (motherloadOrb >= 1000) {
-    return 40; // 2.5% of budget per round
+    return 60; // ~1.67% of budget per round
   }
 
   // Aggressive (900-999 ORB)
   if (motherloadOrb >= 900) {
-    return 60; // ~1.67% of budget per round
+    return 80; // ~1.25% of budget per round
   }
 
-  // Moderate-Aggressive (700-899 ORB)
+  // Aggressive (800-899 ORB)
+  if (motherloadOrb >= 800) {
+    return 100; // 1% of budget per round
+  }
+
+  // Moderate-Aggressive (700-799 ORB)
   if (motherloadOrb >= 700) {
-    return 80; // ~1.25% of budget per round
+    return 120; // ~0.83% of budget per round
   }
 
   // Moderate (600-699 ORB)
   if (motherloadOrb >= 600) {
-    return 100; // 1% of budget per round
+    return 140; // ~0.71% of budget per round
   }
 
   // Moderate-Conservative (500-599 ORB)
   if (motherloadOrb >= 500) {
-    return 120; // ~0.83% of budget per round
+    return 160; // ~0.63% of budget per round
   }
 
   // Conservative (400-499 ORB)
   if (motherloadOrb >= 400) {
-    return 140; // ~0.71% of budget per round
+    return 180; // ~0.56% of budget per round
   }
 
   // Very conservative (300-399 ORB)
   if (motherloadOrb >= 300) {
-    return 160; // ~0.63% of budget per round
+    return 200; // 0.5% of budget per round
   }
 
   // Ultra conservative (200-299 ORB)
-  return 180; // ~0.56% of budget per round - small bets on small rewards
+  if (motherloadOrb >= 200) {
+    return 220; // ~0.45% of budget per round
+  }
+
+  // Extreme conservation (below 200 ORB)
+  // Half the deployment amount of 200-299 tier (double the rounds)
+  return 440; // ~0.23% of budget per round - extremely small bets on minimal rewards
 }
 
 /**
@@ -750,13 +768,11 @@ async function autoSellOrb(): Promise<void> {
       return;
     }
 
-    ui.info(`Wallet ORB balance: ${balances.orb.toFixed(2)} ORB - selling...`);
-
     // Calculate how much ORB to swap
     const orbToSwap = Math.max(0, balances.orb - config.minOrbToKeep);
 
     if (orbToSwap < config.minOrbSwapAmount) {
-      logger.debug(`Not enough ORB to swap (have ${balances.orb.toFixed(2)}, need ${config.minOrbSwapAmount})`);
+      logger.debug(`Not enough ORB to swap (have ${balances.orb.toFixed(2)}, need ${config.minOrbSwapAmount} after keeping ${config.minOrbToKeep})`);
       return;
     }
 
@@ -777,7 +793,7 @@ async function autoSellOrb(): Promise<void> {
       logger.debug(`ORB price: $${priceInUsd.toFixed(2)}`);
     }
 
-    // Swap ORB to SOL
+    // All checks passed - proceed with swap
     ui.swap(`Swapping ${orbToSwap.toFixed(2)} ORB to SOL...`);
 
     const result = await swapOrbToSol(orbToSwap, config.slippageBps);
