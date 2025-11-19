@@ -31,14 +31,14 @@ export default function Profitability() {
     );
   }
 
-  const isProfit = (pnl?.netProfitTotal || 0) >= 0;
+  const isProfit = (pnl?.summary?.netProfit || 0) >= 0;
 
   return (
     <DashboardLayout>
       <div className="space-y-6">
         <div>
           <h1 className="text-3xl font-bold text-primary neon-text">Profitability</h1>
-          <p className="text-muted-foreground">Detailed profit and loss analysis</p>
+          <p className="text-muted-foreground">Detailed profit and loss analysis (Unified System)</p>
         </div>
 
         {/* Net PnL Card */}
@@ -52,15 +52,24 @@ export default function Profitability() {
                 <TrendingDown className="h-6 w-6 text-red-500" />
               )}
             </CardTitle>
+            <CardDescription>
+              Starting: {(pnl?.truePnL?.startingBalance || 0).toFixed(4)} SOL →
+              Current: {(pnl?.truePnL?.currentBalance || 0).toFixed(4)} SOL
+            </CardDescription>
           </CardHeader>
           <CardContent>
             <div className="space-y-2">
               <div className={`text-4xl font-bold ${isProfit ? 'text-green-500 neon-text' : 'text-red-500'}`}>
-                {isProfit ? '+' : ''}{(pnl?.netProfitTotal || 0).toFixed(4)} SOL
+                {isProfit ? '+' : ''}{(pnl?.summary?.netProfit || 0).toFixed(4)} SOL
               </div>
               <div className={`text-lg ${isProfit ? 'text-green-500' : 'text-red-500'}`}>
-                {isProfit ? '+' : ''}{(pnl?.roiPercent || 0).toFixed(2)}% ROI
+                {isProfit ? '+' : ''}{(pnl?.summary?.roi || 0).toFixed(2)}% ROI
               </div>
+              {!pnl?.truePnL?.hasBaseline && (
+                <p className="text-sm text-yellow-500 mt-2">
+                  ⚠️ No baseline set - profit calculated from earliest snapshot
+                </p>
+              )}
             </div>
           </CardContent>
         </Card>
@@ -69,21 +78,31 @@ export default function Profitability() {
         <Card className="border-primary/30">
           <CardHeader>
             <CardTitle className="text-green-500">Income Breakdown</CardTitle>
-            <CardDescription>Total: {(pnl?.totalIncome || 0).toFixed(4)} SOL</CardDescription>
+            <CardDescription>Total: {(pnl?.breakdown?.income?.totalSolIncome || 0).toFixed(4)} SOL</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="space-y-3">
               <div className="flex justify-between">
-                <span className="text-muted-foreground">SOL Claimed</span>
-                <span className="font-semibold">{(pnl?.solRewardsClaimed || 0).toFixed(4)} SOL</span>
+                <span className="text-muted-foreground">SOL from Mining</span>
+                <span className="font-semibold">{(pnl?.breakdown?.income?.solFromMining || 0).toFixed(4)} SOL</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-muted-foreground">ORB Swapped</span>
-                <span className="font-semibold">{(pnl?.orbSwappedToSol || 0).toFixed(4)} SOL</span>
+                <span className="text-muted-foreground">ORB from Mining</span>
+                <span className="font-semibold">{(pnl?.breakdown?.income?.orbFromMining || 0).toFixed(2)} ORB</span>
               </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">SOL from Swaps</span>
+                <span className="font-semibold">{(pnl?.breakdown?.income?.solFromSwaps || 0).toFixed(4)} SOL</span>
+              </div>
+              {pnl?.breakdown?.income?.orbSwappedCount > 0 && (
+                <div className="flex justify-between text-sm">
+                  <span className="text-muted-foreground">ORB Sold</span>
+                  <span>{(pnl.breakdown.income.orbSwappedCount || 0).toFixed(2)} ORB</span>
+                </div>
+              )}
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Current ORB Value</span>
-                <span className="font-semibold">{(pnl?.orbValueInSol || 0).toFixed(4)} SOL</span>
+                <span className="font-semibold">{(pnl?.truePnL?.holdings?.orbValueSol || 0).toFixed(4)} SOL</span>
               </div>
             </div>
           </CardContent>
@@ -93,55 +112,91 @@ export default function Profitability() {
         <Card className="border-primary/30">
           <CardHeader>
             <CardTitle className="text-red-500">Expense Breakdown</CardTitle>
-            <CardDescription>Total: {(pnl?.totalExpenses || 0).toFixed(4)} SOL</CardDescription>
+            <CardDescription>Total: {(pnl?.breakdown?.expenses?.totalExpenses || 0).toFixed(4)} SOL</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="space-y-3">
               <div className="flex justify-between">
-                <span className="text-muted-foreground">Actual Fees Paid</span>
-                <span className="font-semibold">{(pnl?.actualFeesPaid || 0).toFixed(4)} SOL</span>
+                <span className="text-muted-foreground">Capital Deployed</span>
+                <span className="font-semibold">{(pnl?.breakdown?.expenses?.deployedSol || 0).toFixed(4)} SOL</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-muted-foreground">Estimated TX Fees</span>
-                <span className="font-semibold">{(pnl?.estimatedTxFees || 0).toFixed(4)} SOL</span>
+                <span className="text-muted-foreground">Transaction Fees</span>
+                <span className="font-semibold">{(pnl?.breakdown?.expenses?.transactionFees || 0).toFixed(4)} SOL</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-muted-foreground">Dev Fees</span>
-                <span className="font-semibold">{(pnl?.estimatedDevFees || 0).toFixed(4)} SOL</span>
+                <span className="text-muted-foreground">Protocol Fees (10%)</span>
+                <span className="font-semibold">{(pnl?.breakdown?.expenses?.protocolFees || 0).toFixed(4)} SOL</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Dev Fees (0.5%)</span>
+                <span className="font-semibold">{(pnl?.breakdown?.expenses?.devFees || 0).toFixed(4)} SOL</span>
               </div>
             </div>
           </CardContent>
         </Card>
 
-        {/* Current Balances */}
+        {/* Current Holdings */}
         <Card className="border-primary/30">
           <CardHeader>
-            <CardTitle>Current Balances</CardTitle>
-            <CardDescription>Deployed capital and holdings</CardDescription>
+            <CardTitle>Current Holdings</CardTitle>
+            <CardDescription>Your complete portfolio</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="space-y-3">
               <div className="flex justify-between">
-                <span className="text-muted-foreground">Wallet Balance</span>
-                <span className="font-semibold">{(pnl?.currentWalletSol || 0).toFixed(4)} SOL</span>
+                <span className="text-muted-foreground">Wallet SOL</span>
+                <span className="font-semibold">{(pnl?.truePnL?.holdings?.walletSol || 0).toFixed(4)} SOL</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-muted-foreground">Automation Balance</span>
-                <span className="font-semibold">{(pnl?.currentAutomationSol || 0).toFixed(4)} SOL</span>
+                <span className="text-muted-foreground">Automation SOL</span>
+                <span className="font-semibold">{(pnl?.truePnL?.holdings?.automationSol || 0).toFixed(4)} SOL</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-muted-foreground">Claimable Rewards</span>
-                <span className="font-semibold">{(pnl?.currentPendingSol || 0).toFixed(4)} SOL</span>
+                <span className="text-muted-foreground">Claimable SOL</span>
+                <span className="font-semibold">{(pnl?.truePnL?.holdings?.claimableSol || 0).toFixed(4)} SOL</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-muted-foreground">Current ORB Holdings</span>
-                <span className="font-semibold">{(pnl?.currentOrbHoldings || 0).toFixed(4)} ORB</span>
+                <span className="text-muted-foreground">Total ORB</span>
+                <span className="font-semibold">{(pnl?.truePnL?.holdings?.totalOrb || 0).toFixed(2)} ORB</span>
               </div>
               <div className="border-t pt-3 mt-3">
                 <div className="flex justify-between">
-                  <span className="text-muted-foreground font-semibold">Total Capital</span>
-                  <span className="font-bold text-primary">{(pnl?.totalCapital || 0).toFixed(4)} SOL</span>
+                  <span className="text-muted-foreground font-semibold">Total SOL</span>
+                  <span className="font-bold text-primary">{(pnl?.truePnL?.holdings?.totalSol || 0).toFixed(4)} SOL</span>
                 </div>
+                <div className="flex justify-between mt-2">
+                  <span className="text-muted-foreground font-semibold">Total Value (incl. ORB)</span>
+                  <span className="font-bold text-primary">{(pnl?.truePnL?.currentBalance || 0).toFixed(4)} SOL</span>
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Activity Stats */}
+        <Card className="border-primary/30">
+          <CardHeader>
+            <CardTitle>Activity Statistics</CardTitle>
+            <CardDescription>Your mining history</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <p className="text-sm text-muted-foreground">Rounds</p>
+                <p className="text-2xl font-bold">{pnl?.breakdown?.stats?.roundsParticipated || 0}</p>
+              </div>
+              <div>
+                <p className="text-sm text-muted-foreground">Deployments</p>
+                <p className="text-2xl font-bold">{pnl?.breakdown?.stats?.totalDeployments || 0}</p>
+              </div>
+              <div>
+                <p className="text-sm text-muted-foreground">Claims</p>
+                <p className="text-2xl font-bold">{pnl?.breakdown?.stats?.totalClaims || 0}</p>
+              </div>
+              <div>
+                <p className="text-sm text-muted-foreground">Swaps</p>
+                <p className="text-2xl font-bold">{pnl?.breakdown?.stats?.totalSwaps || 0}</p>
               </div>
             </div>
           </CardContent>

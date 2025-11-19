@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { ensureBotInitialized } from '@/lib/init-bot';
-import { getImprovedPnLSummary } from '@bot/utils/database';
+import { getCompletePnLSummary } from '@bot/utils/pnl';
 import { Connection, PublicKey } from '@solana/web3.js';
 import { config } from '@bot/utils/config';
 import { fetchMiner, fetchStake, getAutomationPDA } from '@bot/utils/accounts';
@@ -46,19 +46,27 @@ export async function GET() {
       }
     }
 
-    const pnlSummary = await getImprovedPnLSummary(
+    // Get SOL price from ORB price
+    const solPriceUsd = orbPrice.priceInSol > 0 ? orbPrice.priceInUsd / orbPrice.priceInSol : 0;
+
+    // Get complete PnL summary using unified system
+    const pnlSummary = await getCompletePnLSummary(
       walletBalances.sol,
       currentAutomationSol,
       currentPendingSol,
-      currentPendingOrb,
       walletBalances.orb,
+      currentPendingOrb,
       currentStakedOrb,
-      orbPrice.priceInSol
+      orbPrice.priceInSol,
+      solPriceUsd
     );
 
     return NextResponse.json({
       timestamp: new Date().toISOString(),
       ...pnlSummary,
+      orbPriceUsd: orbPrice.priceInUsd,
+      orbPriceSol: orbPrice.priceInSol,
+      solPriceUsd,
     });
   } catch (error) {
     console.error('Error fetching PnL:', error);

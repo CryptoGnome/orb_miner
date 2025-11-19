@@ -51,10 +51,23 @@ export default function Home() {
     );
   }
 
-  const netPnL = pnl?.netProfitTotal || 0;
-  const totalIncome = pnl?.totalIncome || 0;
-  const totalExpenses = pnl?.totalExpenses || 0;
-  const roi = pnl?.roiPercent || 0;
+  // Extract values from unified PnL structure
+  const netPnL = pnl?.summary?.netProfit || 0;
+  const totalIncome = pnl?.summary?.totalIncome || 0;
+  const totalExpenses = pnl?.summary?.totalExpenses || 0;
+  const roi = pnl?.summary?.roi || 0;
+
+  // Debug logging
+  if (pnl) {
+    console.log('PnL API Response:', {
+      netProfit: pnl?.summary?.netProfit,
+      totalValue: pnl?.summary?.totalValue,
+      totalIncome: pnl?.summary?.totalIncome,
+      totalExpenses: pnl?.summary?.totalExpenses,
+      roi: pnl?.summary?.roi,
+      fullPnL: pnl
+    });
+  }
 
   return (
     <DashboardLayout>

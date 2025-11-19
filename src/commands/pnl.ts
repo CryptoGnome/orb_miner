@@ -1,10 +1,15 @@
 import {
   initializeDatabase,
   closeDatabase,
-  getImprovedPnLSummary,
   getRecentTransactions,
   getDailySummaries,
 } from '../utils/database';
+import {
+  getCompletePnLSummary,
+  formatSol,
+  formatOrb,
+  formatPercent,
+} from '../utils/pnl';
 import { getWallet, getBalances } from '../utils/wallet';
 import { fetchMiner, getAutomationPDA } from '../utils/accounts';
 import { getConnection } from '../utils/solana';
@@ -37,21 +42,21 @@ async function getAutomationInfo() {
 }
 
 /**
- * Display PnL (Profit and Loss) report with improved accuracy
+ * Display PnL (Profit and Loss) report using unified PnL system
  *
- * NEW MODEL:
- * - Separates capital (what you have) from income/expenses
- * - Includes ORB value in total PnL
- * - Tracks actual fees from checkpoint returns
- * - Adds wallet reconciliation
- * - Shows baseline balance if set
+ * UNIFIED MODEL:
+ * - Wallet balance as source of truth
+ * - Starting Balance → Current Balance = Profit
+ * - Detailed breakdown of income and expenses
+ * - In-flight deployment tracking
+ * - ORB value included in holdings
  */
 export async function pnlCommand(): Promise<void> {
   try {
     // Initialize database
     await initializeDatabase();
 
-    ui.header('💰 MINING PROFIT & LOSS');
+    ui.header('💰 MINING PROFIT & LOSS (Unified System)');
     ui.blank();
 
     // Get current on-chain balances
@@ -84,137 +89,121 @@ export async function pnlCommand(): Promise<void> {
     logger.info('Fetching ORB price...');
     const orbPriceData = await getOrbPrice();
     const orbPriceInSol = orbPriceData.priceInSol || 0;
+    const orbPriceUsd = orbPriceData.priceInUsd || 0;
+    const solPriceUsd = orbPriceUsd / orbPriceInSol; // Derive SOL price
 
-    // Get improved PnL summary
-    const pnl = await getImprovedPnLSummary(
+    // Get complete PnL summary using unified system
+    const pnl = await getCompletePnLSummary(
       currentWalletSol,
       currentAutomationSol,
       currentPendingSol,
-      currentPendingOrb,
       currentWalletOrb,
+      currentPendingOrb,
       currentStakedOrb,
-      orbPriceInSol
+      orbPriceInSol,
+      solPriceUsd
     );
 
     // ====================
-    // CAPITAL (What you have now)
+    // PROFIT & LOSS SUMMARY
     // ====================
-    ui.section('CAPITAL');
-    ui.status('Wallet Balance', `${pnl.currentWalletSol.toFixed(4)} SOL`);
-    ui.status('Automation Balance', `${pnl.currentAutomationSol.toFixed(4)} SOL (still mining)`);
-    ui.status('Pending Claims', `${pnl.currentPendingSol.toFixed(4)} SOL (not claimed yet)`);
-    ui.status('Total SOL Capital', `${pnl.totalCapital.toFixed(4)} SOL`);
+    ui.section('PROFIT & LOSS SUMMARY');
+
+    const profitIcon = pnl.summary.isProfitable ? '✅' : '❌';
+    const profitSign = pnl.summary.netProfit >= 0 ? '+' : '';
+
+    ui.status(`${profitIcon} Net Profit`, `${profitSign}${formatSol(pnl.summary.netProfit)} SOL (${formatPercent(pnl.summary.roi)})`);
+    ui.status('Starting Balance', `${formatSol(pnl.truePnL.startingBalance)} SOL`);
+    ui.status('Current Balance', `${formatSol(pnl.truePnL.currentBalance)} SOL`);
+
+    if (!pnl.truePnL.hasBaseline) {
+      ui.warning('⚠️  No baseline set - profit calculated from earliest snapshot');
+      logger.info('   Run: npx ts-node src/index.ts set-baseline <amount>');
+    }
     ui.blank();
 
-    ui.status('ORB Holdings', `${pnl.currentOrbHoldings.toFixed(2)} ORB`);
-    logger.info(`  = ${currentPendingOrb.toFixed(2)} pending + ${currentWalletOrb.toFixed(2)} wallet + ${currentStakedOrb.toFixed(2)} staked`);
+    // ====================
+    // CURRENT HOLDINGS
+    // ====================
+    ui.section('CURRENT HOLDINGS');
+
+    ui.status('Wallet SOL', `${formatSol(pnl.truePnL.holdings.walletSol)} SOL`);
+    ui.status('Automation SOL', `${formatSol(pnl.truePnL.holdings.automationSol)} SOL (still mining)`);
+    ui.status('Claimable SOL', `${formatSol(pnl.truePnL.holdings.claimableSol)} SOL (pending)`);
+    ui.status('💰 Total SOL', `${formatSol(pnl.truePnL.holdings.totalSol)} SOL`);
+    ui.blank();
+
+    ui.status('Total ORB', `${formatOrb(pnl.truePnL.holdings.totalOrb)} ORB`);
+    logger.info(`  = ${formatOrb(currentPendingOrb)} pending + ${formatOrb(currentWalletOrb)} wallet + ${formatOrb(currentStakedOrb)} staked`);
     if (orbPriceInSol > 0) {
-      ui.status('ORB Value', `${pnl.orbValueInSol.toFixed(4)} SOL (@ ${orbPriceInSol.toFixed(6)} SOL/ORB)`);
+      ui.status('ORB Value', `${formatSol(pnl.truePnL.holdings.orbValueSol)} SOL @ $${orbPriceUsd.toFixed(2)}/ORB`);
     }
     ui.blank();
 
-    ui.status('💎 Total Capital', `${(pnl.totalCapital + pnl.orbValueInSol).toFixed(4)} SOL equivalent`);
-    ui.blank();
+    // ====================
+    // INCOME BREAKDOWN
+    // ====================
+    ui.section('INCOME BREAKDOWN');
 
-    // ====================
-    // INCOME (What you earned)
-    // ====================
-    ui.section('INCOME');
-    ui.status('SOL Rewards Claimed', `${pnl.solRewardsClaimed.toFixed(4)} SOL`);
-    ui.status('ORB Swapped to SOL', `${pnl.orbSwappedToSol.toFixed(4)} SOL`);
-    if (orbPriceInSol > 0) {
-      ui.status('ORB Holdings Value', `${pnl.orbValueInSol.toFixed(4)} SOL`);
-    }
-    ui.status('📈 Total Income', `${pnl.totalIncome.toFixed(4)} SOL`);
-    ui.blank();
+    ui.status('SOL from Mining', `${formatSol(pnl.breakdown.income.solFromMining)} SOL`);
+    ui.status('ORB from Mining', `${formatOrb(pnl.breakdown.income.orbFromMining)} ORB`);
 
-    // ====================
-    // EXPENSES (What you spent)
-    // ====================
-    ui.section('EXPENSES');
-
-    if (pnl.actualFeesPaid > 0) {
-      ui.status('Deploy Fees (Actual)', `${pnl.actualFeesPaid.toFixed(4)} SOL`);
-      logger.info(`  (From checkpoint tracking)`);
-    } else {
-      ui.status('Deploy Fees (Estimated)', `${(pnl.estimatedTxFees * 0.05).toFixed(4)} SOL`);
-      logger.info(`  ⚠️  Enable checkpoint tracking for actual fees`);
+    if (pnl.breakdown.income.solFromSwaps > 0) {
+      ui.status('SOL from Swaps', `${formatSol(pnl.breakdown.income.solFromSwaps)} SOL`);
+      logger.info(`  (Sold ${formatOrb(pnl.breakdown.income.orbSwappedCount)} ORB)`);
     }
 
-    ui.status('Transaction Fees', `${pnl.estimatedTxFees.toFixed(4)} SOL`);
-    logger.info(`  (${pnl.totalDeployTxCount} transactions × ~0.0085 SOL)`);
-
-    ui.status('Dev Fees (0.1%)', `${pnl.estimatedDevFees.toFixed(4)} SOL`);
-    ui.status('💸 Total Expenses', `${pnl.totalExpenses.toFixed(4)} SOL`);
+    ui.status('📈 Total SOL Income', `${formatSol(pnl.breakdown.income.totalSolIncome)} SOL`);
     ui.blank();
 
     // ====================
-    // PROFIT & LOSS
+    // EXPENSE BREAKDOWN
     // ====================
-    ui.section('NET PROFIT / LOSS');
+    ui.section('EXPENSE BREAKDOWN');
 
-    const solPnlIcon = pnl.netProfitSol >= 0 ? '✅' : '❌';
-    const totalPnlIcon = pnl.netProfitTotal >= 0 ? '✅' : '❌';
-
-    ui.status(`${solPnlIcon} SOL Only PnL`, `${pnl.netProfitSol >= 0 ? '+' : ''}${pnl.netProfitSol.toFixed(4)} SOL`);
-    logger.info(`  = Income (${pnl.solRewardsClaimed.toFixed(4)} + ${pnl.orbSwappedToSol.toFixed(4)}) - Expenses (${pnl.totalExpenses.toFixed(4)})`);
-
-    ui.status(`${totalPnlIcon} Total PnL (incl ORB)`, `${pnl.netProfitTotal >= 0 ? '+' : ''}${pnl.netProfitTotal.toFixed(4)} SOL`);
-    logger.info(`  = Total Income (${pnl.totalIncome.toFixed(4)}) - Expenses (${pnl.totalExpenses.toFixed(4)})`);
-
-    const roiIcon = pnl.roiPercent >= 0 ? '✅' : '❌';
-    ui.status(`${roiIcon} ROI`, `${pnl.roiPercent >= 0 ? '+' : ''}${pnl.roiPercent.toFixed(2)}%`);
+    ui.status('Capital Deployed', `${formatSol(pnl.breakdown.expenses.deployedSol)} SOL`);
+    ui.status('Transaction Fees', `${formatSol(pnl.breakdown.expenses.transactionFees)} SOL`);
+    ui.status('Protocol Fees (10%)', `${formatSol(pnl.breakdown.expenses.protocolFees)} SOL`);
+    ui.status('Dev Fees (0.5%)', `${formatSol(pnl.breakdown.expenses.devFees)} SOL`);
+    ui.status('💸 Total Expenses', `${formatSol(pnl.breakdown.expenses.totalExpenses)} SOL`);
     ui.blank();
 
     // ====================
-    // BASELINE & RECONCILIATION
+    // ACTIVITY STATS
     // ====================
-    if (pnl.hasBaseline) {
+    ui.section('ACTIVITY STATS');
+
+    ui.status('Rounds Participated', `${pnl.breakdown.stats.roundsParticipated}`);
+    ui.status('Total Deployments', `${pnl.breakdown.stats.totalDeployments}`);
+    ui.status('Total Claims', `${pnl.breakdown.stats.totalClaims}`);
+    ui.status('Total Swaps', `${pnl.breakdown.stats.totalSwaps}`);
+
+    if (pnl.breakdown.stats.firstActivity) {
+      const firstDate = new Date(pnl.breakdown.stats.firstActivity);
+      const lastDate = new Date(pnl.breakdown.stats.lastActivity!);
+      const daysSince = Math.floor((Date.now() - pnl.breakdown.stats.firstActivity) / (1000 * 60 * 60 * 24));
+
+      ui.status('First Activity', `${firstDate.toLocaleString()} (${daysSince} days ago)`);
+      ui.status('Last Activity', `${lastDate.toLocaleString()}`);
+    }
+    ui.blank();
+
+    // ====================
+    // BASELINE TRACKING
+    // ====================
+    if (pnl.truePnL.hasBaseline) {
       ui.section('BASELINE TRACKING');
-      ui.status('Starting Balance', `${pnl.baselineBalance.toFixed(4)} SOL`);
-      ui.status('Current Total', `${(pnl.totalCapital + pnl.orbValueInSol).toFixed(4)} SOL`);
-      const truePnl = (pnl.totalCapital + pnl.orbValueInSol) - pnl.baselineBalance;
-      const truePnlIcon = truePnl >= 0 ? '✅' : '❌';
-      ui.status(`${truePnlIcon} True Mining Profit`, `${truePnl >= 0 ? '+' : ''}${truePnl.toFixed(4)} SOL`);
-      ui.blank();
-    } else {
-      ui.section('BASELINE TRACKING');
-      ui.warning('⚠️  No baseline balance set');
-      logger.info('   Run: node dist/index.js set-baseline');
-      logger.info('   This will enable accurate true profit tracking.');
-      ui.blank();
-    }
-
-    ui.section('WALLET RECONCILIATION');
-    if (pnl.hasBaseline) {
-      ui.status('Expected Wallet', `${pnl.expectedWalletBalance.toFixed(4)} SOL`);
-      ui.status('Actual Wallet', `${pnl.currentWalletSol.toFixed(4)} SOL`);
-      ui.status('Difference', `${pnl.walletDifference >= 0 ? '+' : ''}${pnl.walletDifference.toFixed(4)} SOL`);
-
-      if (pnl.walletReconciled) {
-        ui.success('✅ Wallet reconciled - all SOL accounted for');
-      } else {
-        ui.warning('⚠️  Wallet mismatch detected - check for missing transactions');
+      ui.status('✅ Baseline Set', `${formatSol(pnl.truePnL.startingBalance)} SOL`);
+      if (pnl.truePnL.baselineTimestamp) {
+        const baselineDate = new Date(pnl.truePnL.baselineTimestamp);
+        ui.status('Baseline Date', baselineDate.toLocaleString());
       }
-    } else {
-      logger.info('   Set baseline to enable reconciliation');
+      ui.blank();
     }
-    ui.blank();
 
     // ====================
-    // STATISTICS
+    // RECENT ACTIVITY
     // ====================
-    ui.section('STATISTICS');
-    ui.status('Rounds Participated', pnl.roundsParticipated.toString());
-    ui.status('Deploy Transactions', pnl.totalDeployTxCount.toString());
-
-    if (pnl.roundsParticipated > 0) {
-      const avgIncomePerRound = pnl.totalIncome / pnl.roundsParticipated;
-      const avgExpensesPerRound = pnl.totalExpenses / pnl.roundsParticipated;
-      ui.status('Avg Income/Round', `${avgIncomePerRound.toFixed(6)} SOL`);
-      ui.status('Avg Expenses/Round', `${avgExpensesPerRound.toFixed(6)} SOL`);
-    }
-    ui.blank();
 
     // ====================
     // DAILY BREAKDOWN
@@ -276,19 +265,19 @@ export async function pnlCommand(): Promise<void> {
     ui.blank();
     ui.section('SUMMARY');
 
-    if (pnl.netProfitTotal >= 0) {
-      ui.success(`✅ PROFITABLE: +${pnl.netProfitTotal.toFixed(4)} SOL (+${pnl.roiPercent.toFixed(2)}% ROI)`);
+    if (pnl.summary.isProfitable) {
+      ui.success(`✅ PROFITABLE: +${pnl.summary.netProfit.toFixed(4)} SOL (+${pnl.summary.roi.toFixed(2)}% ROI)`);
     } else {
-      ui.warning(`❌ UNPROFITABLE: ${pnl.netProfitTotal.toFixed(4)} SOL (${pnl.roiPercent.toFixed(2)}% ROI)`);
+      ui.warning(`❌ UNPROFITABLE: ${pnl.summary.netProfit.toFixed(4)} SOL (${pnl.summary.roi.toFixed(2)}% ROI)`);
     }
 
-    if (pnl.orbValueInSol > 0) {
-      logger.info(`Including ${pnl.currentOrbHoldings.toFixed(2)} ORB holdings (~${pnl.orbValueInSol.toFixed(4)} SOL)`);
+    if (pnl.truePnL.holdings.orbValueSol > 0) {
+      logger.info(`Including ${pnl.truePnL.holdings.totalOrb.toFixed(2)} ORB holdings (~${pnl.truePnL.holdings.orbValueSol.toFixed(4)} SOL)`);
     }
 
-    if (!pnl.hasBaseline) {
+    if (!pnl.truePnL.hasBaseline) {
       logger.info('');
-      logger.info('💡 Tip: Run `node dist/index.js set-baseline` for more accurate PnL tracking');
+      logger.info('💡 Tip: Run `npx ts-node src/index.ts set-baseline <amount>` for accurate profit tracking');
     }
 
     ui.blank();

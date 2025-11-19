@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { ensureBotInitialized } from '@/lib/init-bot';
-import { getBalanceHistory, getDailySummaries } from '@bot/utils/database';
+import { getDailySummaries } from '@bot/utils/database';
+import { getBalanceHistory } from '@bot/utils/pnl';
 import sqlite3 from 'sqlite3';
 import path from 'path';
 
@@ -41,7 +42,7 @@ export async function GET() {
 
     return NextResponse.json({
       timestamp: new Date().toISOString(),
-      balanceHistory: balanceHistory.reverse(), // Most recent last for charts
+      balanceHistory, // Already in chronological order from pnl module
       dailySummaries,
       priceHistory,
     });

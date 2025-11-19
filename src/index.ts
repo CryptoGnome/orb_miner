@@ -3,6 +3,8 @@ import logger from './utils/logger';
 import { smartBotCommand } from './commands/smartBot';
 import { pnlCommand } from './commands/pnl';
 import { setBaselineCommand } from './commands/setBaseline';
+import { initializeDatabase, closeDatabase } from './utils/database';
+import { runQuery } from './utils/database';
 
 /**
  * ORB Mining Bot - CLI Entry Point
@@ -11,6 +13,7 @@ import { setBaselineCommand } from './commands/setBaseline';
  * - (no args): Run the smart autonomous bot
  * - pnl: Display profit & loss report
  * - set-baseline [amount]: Set starting wallet balance for PnL tracking
+ * - reset-baseline: Delete existing baseline to set a new one
  */
 
 async function main() {
@@ -31,6 +34,15 @@ async function main() {
       return;
     }
 
+    if (command === 'reset-baseline') {
+      // Reset baseline
+      await initializeDatabase();
+      await runQuery('DELETE FROM transactions WHERE type = ?', ['baseline']);
+      logger.info('✅ Baseline reset successfully. Run the bot again to set a new baseline.');
+      await closeDatabase();
+      return;
+    }
+
     if (command && command !== 'bot') {
       logger.error(`Unknown command: ${command}`);
       logger.info('');
@@ -38,6 +50,7 @@ async function main() {
       logger.info('  (no args)              - Run autonomous mining bot');
       logger.info('  pnl                    - Display profit & loss report');
       logger.info('  set-baseline [amount]  - Set starting wallet balance');
+      logger.info('  reset-baseline         - Delete existing baseline');
       process.exit(1);
     }
 
