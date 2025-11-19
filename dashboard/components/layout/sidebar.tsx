@@ -14,6 +14,9 @@ import {
   Zap,
   Pause,
   Play,
+  GitBranch,
+  Download,
+  CheckCircle,
 } from 'lucide-react';
 
 const navigation = [
@@ -30,6 +33,12 @@ async function fetchStatus() {
   return res.json();
 }
 
+async function fetchGitStatus() {
+  const res = await fetch('/api/git-status');
+  if (!res.ok) throw new Error('Failed to fetch git status');
+  return res.json();
+}
+
 export function Sidebar() {
   const pathname = usePathname();
 
@@ -37,6 +46,12 @@ export function Sidebar() {
     queryKey: ['status'],
     queryFn: fetchStatus,
     refetchInterval: 10000,
+  });
+
+  const { data: gitStatus } = useQuery({
+    queryKey: ['git-status'],
+    queryFn: fetchGitStatus,
+    refetchInterval: 60000, // Check every minute
   });
 
   const motherload = status?.round?.motherlode || 0;
@@ -146,6 +161,47 @@ export function Sidebar() {
             </div>
           </div>
         </div>
+
+        {/* Git Status */}
+        {gitStatus && !gitStatus.error && (
+          <div className="rounded-lg bg-accent/50 p-3 space-y-2">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <GitBranch className="h-3 w-3 text-muted-foreground" />
+                <span className="text-xs text-muted-foreground">Version</span>
+              </div>
+              {gitStatus.hasUpdates ? (
+                <Badge variant="outline" className="bg-orange-500/20 text-orange-500 border-orange-500/50 text-xs">
+                  <Download className="h-3 w-3 mr-1" />
+                  {gitStatus.behindBy} update{gitStatus.behindBy > 1 ? 's' : ''}
+                </Badge>
+              ) : (
+                <Badge variant="outline" className="bg-green-500/20 text-green-500 border-green-500/50 text-xs">
+                  <CheckCircle className="h-3 w-3 mr-1" />
+                  Up to date
+                </Badge>
+              )}
+            </div>
+            <div className="space-y-1">
+              <div className="flex justify-between items-center">
+                <span className="text-xs text-muted-foreground">Branch</span>
+                <span className="text-xs font-mono">{gitStatus.currentBranch}</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-xs text-muted-foreground">Commit</span>
+                <span className="text-xs font-mono">{gitStatus.currentCommitShort}</span>
+              </div>
+              {gitStatus.lastCommitDate && (
+                <div className="pt-1 border-t border-border/50">
+                  <p className="text-xs text-muted-foreground truncate" title={gitStatus.lastCommitMessage}>
+                    {gitStatus.lastCommitMessage}
+                  </p>
+                  <p className="text-xs text-muted-foreground/70 mt-0.5">{gitStatus.lastCommitDate}</p>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
