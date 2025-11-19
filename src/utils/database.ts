@@ -197,7 +197,7 @@ export async function closeDatabase(): Promise<void> {
 // ============================================================================
 
 export interface TransactionRecord {
-  type: 'deploy' | 'claim_sol' | 'claim_orb' | 'swap' | 'stake' | 'unstake' | 'automation_setup' | 'automation_close';
+  type: 'deploy' | 'claim_sol' | 'claim_orb' | 'swap' | 'stake' | 'unstake' | 'automation_setup' | 'automation_close' | 'checkpoint_return' | 'baseline';
   signature?: string;
   roundId?: number;
   solAmount?: number;
@@ -340,6 +340,7 @@ export async function getPnLSummary(startTimestamp?: number, endTimestamp?: numb
   // Get transaction totals
   // IMPORTANT: Only count automation_setup as capital deployed, NOT individual deploy transactions
   // Deploy transactions are spending from automation account (already counted in setup)
+  // ALSO: Subtract automation_close amounts (money returned when closing automation)
   const txSummary = await getQuery<{
     total_deployed: number;
     total_claimed_sol: number;
@@ -349,7 +350,7 @@ export async function getPnLSummary(startTimestamp?: number, endTimestamp?: numb
     total_staked: number;
   }>(`
     SELECT
-      COALESCE(SUM(CASE WHEN type = 'automation_setup' THEN sol_amount ELSE 0 END), 0) as total_deployed,
+      COALESCE(SUM(CASE WHEN type = 'automation_setup' THEN sol_amount WHEN type = 'automation_close' THEN -sol_amount ELSE 0 END), 0) as total_deployed,
       COALESCE(SUM(CASE WHEN type = 'claim_sol' THEN sol_amount ELSE 0 END), 0) as total_claimed_sol,
       COALESCE(SUM(CASE WHEN type = 'claim_orb' THEN orb_amount ELSE 0 END), 0) as total_claimed_orb,
       COALESCE(SUM(CASE WHEN type = 'swap' THEN orb_amount ELSE 0 END), 0) as total_swapped_orb,
@@ -460,7 +461,7 @@ export async function getDailySummaries(days: number = 7): Promise<any[]> {
     SELECT
       date(timestamp / 1000, 'unixepoch') as date,
       COUNT(DISTINCT CASE WHEN type = 'deploy' THEN round_id END) as rounds,
-      COALESCE(SUM(CASE WHEN type = 'automation_setup' THEN sol_amount ELSE 0 END), 0) as deployed_sol,
+      COALESCE(SUM(CASE WHEN type = 'automation_setup' THEN sol_amount WHEN type = 'automation_close' THEN -sol_amount ELSE 0 END), 0) as deployed_sol,
       COALESCE(SUM(CASE WHEN type = 'claim_sol' THEN sol_amount ELSE 0 END), 0) as claimed_sol,
       COALESCE(SUM(CASE WHEN type = 'claim_orb' THEN orb_amount ELSE 0 END), 0) as claimed_orb,
       COALESCE(SUM(CASE WHEN type = 'swap' THEN orb_amount ELSE 0 END), 0) as swapped_orb,
@@ -532,5 +533,241 @@ export async function getQuickPnLSnapshot(
     netSolPnl,
     netOrbBalance,
     roundsParticipated: summary.roundsParticipated,
+  };
+}
+
+// ============================================================================
+// Improved PnL Model Functions
+// ============================================================================
+
+/**
+ * Get baseline (starting) wallet balance
+ */
+export async function getBaselineBalance(): Promise<number> {
+  const baseline = await getQuery<{ sol_amount: number }>(`
+    SELECT sol_amount
+    FROM transactions
+    WHERE type = 'baseline'
+    ORDER BY timestamp ASC
+    LIMIT 1
+  `);
+
+  return baseline?.sol_amount || 0;
+}
+
+/**
+ * Set baseline balance (one-time operation)
+ */
+export async function setBaselineBalance(solAmount: number): Promise<void> {
+  // Check if baseline already exists
+  const existing = await getBaselineBalance();
+  if (existing > 0) {
+    logger.info(`Baseline already set to ${existing} SOL. Skipping.`);
+    return;
+  }
+
+  await recordTransaction({
+    type: 'baseline',
+    solAmount,
+    status: 'success',
+    notes: 'Initial wallet balance before mining operations'
+  });
+
+  logger.info(`Baseline balance set to ${solAmount} SOL`);
+}
+
+/**
+ * Get total actual fees paid from checkpoint tracking
+ */
+export async function getActualFeesPaid(): Promise<{
+  deployTotal: number;
+  checkpointReturns: number;
+  actualFees: number;
+}> {
+  const result = await getQuery<{
+    deploy_total: number;
+    checkpoint_returns: number;
+  }>(`
+    SELECT
+      COALESCE(SUM(CASE WHEN type = 'deploy' THEN sol_amount ELSE 0 END), 0) as deploy_total,
+      COALESCE(SUM(CASE WHEN type = 'checkpoint_return' THEN sol_amount ELSE 0 END), 0) as checkpoint_returns
+    FROM transactions
+    WHERE status = 'success'
+  `);
+
+  const deployTotal = result?.deploy_total || 0;
+  const checkpointReturns = result?.checkpoint_returns || 0;
+  const actualFees = deployTotal - checkpointReturns;
+
+  return {
+    deployTotal,
+    checkpointReturns,
+    actualFees: actualFees > 0 ? actualFees : 0,
+  };
+}
+
+/**
+ * Improved PnL Summary with proper separation of capital, income, and expenses
+ */
+export interface ImprovedPnLSummary {
+  // Capital (what you have now)
+  currentWalletSol: number;
+  currentAutomationSol: number;
+  currentPendingSol: number;
+  currentOrbHoldings: number;
+  currentStakedOrb: number;
+  totalCapital: number;
+
+  // Income (what you earned)
+  solRewardsClaimed: number;
+  orbSwappedToSol: number;
+  orbValueInSol: number; // Current ORB holdings × price
+  totalIncome: number;
+
+  // Expenses (what you spent)
+  actualFeesPaid: number; // From checkpoint tracking
+  estimatedTxFees: number; // Based on transaction count
+  estimatedDevFees: number; // 0.1% of deploys
+  totalExpenses: number;
+
+  // Profit calculation
+  netProfitSol: number; // Income - Expenses
+  netProfitTotal: number; // Including ORB value
+  roiPercent: number;
+
+  // Baseline tracking
+  baselineBalance: number;
+  hasBaseline: boolean;
+
+  // Reconciliation
+  expectedWalletBalance: number;
+  walletDifference: number;
+  walletReconciled: boolean;
+
+  // Stats
+  roundsParticipated: number;
+  totalDeployTxCount: number;
+  orbPriceInSol: number;
+}
+
+export async function getImprovedPnLSummary(
+  currentWalletSol: number,
+  currentAutomationSol: number,
+  currentPendingSol: number,
+  currentPendingOrb: number,
+  currentWalletOrb: number,
+  currentStakedOrb: number,
+  orbPriceInSol: number
+): Promise<ImprovedPnLSummary> {
+  // Get baseline
+  const baselineBalance = await getBaselineBalance();
+  const hasBaseline = baselineBalance > 0;
+
+  // Get income
+  const summary = await getPnLSummary();
+  const solRewardsClaimed = summary.totalClaimedSol;
+  const orbSwappedToSol = summary.totalSwappedSol;
+
+  // Calculate ORB holdings value
+  const currentOrbHoldings = currentPendingOrb + currentWalletOrb + currentStakedOrb;
+  const orbValueInSol = currentOrbHoldings * orbPriceInSol;
+
+  // Get actual fees
+  const fees = await getActualFeesPaid();
+  const actualFeesPaid = fees.actualFees;
+
+  // Estimate other fees
+  const deployCount = await getQuery<{ count: number }>(`
+    SELECT COUNT(*) as count
+    FROM transactions
+    WHERE type = 'deploy' AND status = 'success'
+  `);
+  const totalDeployTxCount = deployCount?.count || 0;
+  const estimatedTxFees = totalDeployTxCount * 0.0085; // ~0.0085 SOL per tx (priority + base fees)
+  const estimatedDevFees = fees.deployTotal * 0.001; // 0.1% dev fee
+
+  // Calculate totals
+  const totalCapital = currentWalletSol + currentAutomationSol + currentPendingSol;
+  const totalIncome = solRewardsClaimed + orbSwappedToSol + orbValueInSol;
+  const totalExpenses = actualFeesPaid + estimatedTxFees + estimatedDevFees;
+
+  // Calculate profit
+  const netProfitSol = solRewardsClaimed + orbSwappedToSol - totalExpenses;
+  const netProfitTotal = totalIncome - totalExpenses;
+
+  // Calculate ROI
+  let roiPercent = 0;
+  if (hasBaseline) {
+    // True ROI: (Current - Starting) / Starting
+    const currentTotal = totalCapital + orbValueInSol;
+    roiPercent = ((currentTotal - baselineBalance) / baselineBalance) * 100;
+  } else if (totalExpenses > 0) {
+    // Fallback: Return on expenses
+    roiPercent = (netProfitTotal / totalExpenses) * 100;
+  }
+
+  // Wallet reconciliation
+  const setupTotals = await getQuery<{ total: number }>(`
+    SELECT COALESCE(SUM(sol_amount), 0) as total
+    FROM transactions
+    WHERE type = 'automation_setup' AND status = 'success'
+  `);
+  const closeTotals = await getQuery<{ total: number }>(`
+    SELECT COALESCE(SUM(sol_amount), 0) as total
+    FROM transactions
+    WHERE type = 'automation_close' AND status = 'success'
+  `);
+
+  let expectedWalletBalance = baselineBalance;
+  if (hasBaseline) {
+    expectedWalletBalance = baselineBalance
+      - (setupTotals?.total || 0)
+      + (closeTotals?.total || 0)
+      + solRewardsClaimed
+      + orbSwappedToSol;
+  }
+
+  const walletDifference = currentWalletSol - expectedWalletBalance;
+  const walletReconciled = Math.abs(walletDifference) < 0.1; // Within 0.1 SOL tolerance
+
+  return {
+    // Capital
+    currentWalletSol,
+    currentAutomationSol,
+    currentPendingSol,
+    currentOrbHoldings,
+    currentStakedOrb,
+    totalCapital,
+
+    // Income
+    solRewardsClaimed,
+    orbSwappedToSol,
+    orbValueInSol,
+    totalIncome,
+
+    // Expenses
+    actualFeesPaid,
+    estimatedTxFees,
+    estimatedDevFees,
+    totalExpenses,
+
+    // Profit
+    netProfitSol,
+    netProfitTotal,
+    roiPercent,
+
+    // Baseline
+    baselineBalance,
+    hasBaseline,
+
+    // Reconciliation
+    expectedWalletBalance,
+    walletDifference,
+    walletReconciled,
+
+    // Stats
+    roundsParticipated: summary.roundsParticipated,
+    totalDeployTxCount,
+    orbPriceInSol,
   };
 }
