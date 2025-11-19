@@ -1214,7 +1214,6 @@ export async function smartBotCommand(): Promise<void> {
     // Step 2: Main autonomous loop
     let lastRoundId = '';
     let deployedRounds = 0;
-    let shouldCloseAutomation = false; // Flag to close automation after periodic operations
 
     while (isRunning) {
       try {
@@ -1283,6 +1282,45 @@ export async function smartBotCommand(): Promise<void> {
           // PRIORITY: Auto-mine the new round FIRST (before slow operations)
           const deployed = await autoMineRound(automationInfo);
 
+          // Check automation balance after deployment attempt (success or failure)
+          // This ensures we detect depletion even when deployment fails
+          const updatedInfoAfterDeploy = await getAutomationInfo();
+          if (updatedInfoAfterDeploy) {
+            const remainingRounds = Math.floor(updatedInfoAfterDeploy.balance / updatedInfoAfterDeploy.costPerRound);
+
+            // If depleted, close immediately (don't wait for next check)
+            if (remainingRounds === 0) {
+              logger.debug(`Automation depleted (balance: ${(updatedInfoAfterDeploy.balance / 1e9).toFixed(6)} SOL, need: ${(updatedInfoAfterDeploy.costPerRound / 1e9).toFixed(6)} SOL)`);
+              ui.warning('Budget depleted - closing automation to reclaim SOL...');
+
+              try {
+                const closeInstruction = buildCloseAutomationInstruction();
+                const closeSig = await sendAndConfirmTransaction([closeInstruction], 'Close Automation');
+                logger.debug(`Automation account closed: ${closeSig}`);
+                ui.success('SOL reclaimed - will recreate automation on next round');
+
+                // Record automation close
+                try {
+                  const returnedSol = updatedInfoAfterDeploy.balance / 1e9;
+                  await recordTransaction({
+                    type: 'automation_close',
+                    signature: closeSig,
+                    solAmount: returnedSol,
+                    status: 'success',
+                    notes: `Budget depleted - closed for SOL reclaim (returned ${returnedSol.toFixed(6)} SOL)`,
+                  });
+                } catch (error) {
+                  logger.error('Failed to record automation close:', error);
+                }
+
+                // Wait for closure to propagate before continuing
+                await sleep(2000);
+              } catch (closeError) {
+                logger.error('Failed to close automation account:', closeError);
+              }
+            }
+          }
+
           if (deployed) {
             deployedRounds++;
             ui.info(`Total rounds mined: ${deployedRounds}`);
@@ -1300,10 +1338,6 @@ export async function smartBotCommand(): Promise<void> {
 
               if (remainingRounds < 5 && remainingRounds > 0) {
                 ui.warning(`Only ${remainingRounds} rounds remaining!`);
-              } else if (remainingRounds === 0) {
-                // Mark for closure after periodic operations (don't block next round)
-                shouldCloseAutomation = true;
-                ui.warning('Budget depleted - will close automation after cleanup');
               }
             }
 
@@ -1352,32 +1386,6 @@ export async function smartBotCommand(): Promise<void> {
           await autoStakeOrb();
           await autoSwapCheck();
           await captureBalanceSnapshot();
-        }
-
-        // Close automation if flagged (happens after all operations, no rush)
-        if (shouldCloseAutomation) {
-          try {
-            const closeInstruction = buildCloseAutomationInstruction();
-            const closeSig = await sendAndConfirmTransaction([closeInstruction], 'Close Automation');
-            logger.debug(`Automation account closed: ${closeSig}`);
-            ui.success('SOL reclaimed - will recreate automation on next round');
-            shouldCloseAutomation = false; // Reset flag
-
-            // Record automation close
-            try {
-              await recordTransaction({
-                type: 'automation_close',
-                signature: closeSig,
-                status: 'success',
-                notes: 'Budget depleted - closed for SOL reclaim',
-              });
-            } catch (error) {
-              logger.error('Failed to record automation close:', error);
-            }
-          } catch (closeError) {
-            logger.error('Failed to close automation account:', closeError);
-            shouldCloseAutomation = false; // Reset flag to avoid retry loop
-          }
         }
 
         // Wait before checking again (interruptible sleep for fast Ctrl+C exit)

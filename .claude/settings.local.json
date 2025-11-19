@@ -14,7 +14,8 @@
       "Bash(git rev-list:*)",
       "Bash(git cat-file:*)",
       "Bash(git ls-tree:*)",
-      "Bash(awk:*)"
+      "Bash(awk:*)",
+      "Bash(timeout /t 5)"
     ],
     "deny": [],
     "ask": []
