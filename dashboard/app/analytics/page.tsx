@@ -33,19 +33,19 @@ export default function Analytics() {
 
   const balanceHistory = (data?.balanceHistory || []).map((item: any) => ({
     time: format(new Date(item.timestamp), 'MMM dd HH:mm'),
-    sol: item.wallet_sol + item.automation_sol,
-    orb: item.wallet_orb,
+    sol: item.totalSol || 0,
+    orb: item.totalOrb || 0,
   }));
 
   const dailySummaries = (data?.dailySummaries || []).map((item: any) => ({
-    date: format(new Date(item.date), 'MMM dd'),
-    rounds: item.total_rounds,
-    deployed: item.total_deployed,
+    date: item.date ? format(new Date(item.date + 'T00:00:00'), 'MMM dd') : '',
+    rounds: item.rounds || 0,
+    deployed: item.deployed_sol || 0,
   }));
 
   const priceHistory = (data?.priceHistory || []).map((item: any) => ({
     time: format(new Date(item.timestamp), 'MMM dd HH:mm'),
-    price: item.orb_price_usd,
+    price: item.orb_price_usd || 0,
   }));
 
   return (
