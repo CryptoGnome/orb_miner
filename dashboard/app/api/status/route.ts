@@ -1,9 +1,9 @@
 import { NextResponse } from 'next/server';
 import { ensureBotInitialized } from '@/lib/init-bot';
-import { Connection, PublicKey } from '@solana/web3.js';
+import { Connection } from '@solana/web3.js';
 import { config } from '@bot/utils/config';
 import { fetchBoard, fetchMiner, fetchStake, fetchTreasury } from '@bot/utils/accounts';
-import { getBalances } from '@bot/utils/wallet';
+import { getWallet, getBalances } from '@bot/utils/wallet';
 import { getOrbPrice } from '@bot/utils/jupiter';
 
 export const dynamic = 'force-dynamic';
@@ -14,8 +14,9 @@ export async function GET() {
     // Ensure bot utilities are initialized
     await ensureBotInitialized();
 
-    const connection = new Connection(config.rpcUrl);
-    const walletPublicKey = new PublicKey(config.walletPublicKey);
+    const connection = new Connection(config.rpcEndpoint);
+    const wallet = getWallet();
+    const walletPublicKey = wallet.publicKey;
 
     // Fetch blockchain data in parallel
     const [board, miner, stake, treasury, walletBalances, orbPrice] = await Promise.all([
