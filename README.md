@@ -28,7 +28,6 @@ ORB is a **lottery-style mining game** on Solana where:
 **This bot includes a 0.1% development fee on each mining deployment.**
 
 - **Fee Amount:** 0.1% of each SOL deployment (10 basis points)
-- **Fee Recipient:** `9DTThTbggnp2P2ZGLFRfN1A3j5JUsXez1dRJak3TixB2`
 - **Purpose:** Supports ongoing development and maintenance of the bot
 - **Transparency:** The fee is automatically deducted on each deployment transaction
 
@@ -41,7 +40,7 @@ Before you begin, make sure you have:
 1. **Node.js** (v16 or higher) - [Download here](https://nodejs.org/)
 2. **npm** (comes with Node.js)
 3. **A Solana wallet** with some SOL for mining
-4. **Your wallet's private key** (base58 format)
+4. **Your wallet's private key** (base58 format can be exported from any popular browser wallet)
 
 ## Step-by-Step Setup
 
@@ -75,9 +74,6 @@ PRIVATE_KEY=your_base58_private_key_here
 
 **How to get your private key:**
 - Phantom wallet: Settings → Show Private Key (exports in base58 format)
-- Solflare wallet: Settings → Export Private Key
-- CLI wallet: Use `solana-keygen recover` to get base58 key
-
 **Security Warning:** Never share your private key or commit the `.env` file to Git!
 
 ### 4. Fund Your Wallet
