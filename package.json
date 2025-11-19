@@ -7,7 +7,8 @@
     "start": "ts-node src/index.ts",
     "dev": "nodemon --exec ts-node src/index.ts",
     "build": "tsc",
-    "clean": "rm -rf dist"
+    "clean": "rm -rf dist",
+    "simulate": "ts-node scripts/monte-carlo-simulation.ts"
   },
   "keywords": [
     "solana",
