@@ -5,6 +5,8 @@
 [![License](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat)](LICENSE)
 
 Fully autonomous Solana mining bot with Monte Carlo-optimized bet sizing, real-time profitability analysis, and Next.js dashboard.
+<img width="1901" height="955" alt="image" src="https://github.com/user-attachments/assets/0170c488-9199-46ef-9422-f4b5bf0fcf44" />
+
 
 **+139% Avg ROI** • Monte Carlo Optimized • Real-Time EV • Dynamic Scaling
 
