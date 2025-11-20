@@ -8,14 +8,13 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   Wallet,
   Coins,
-  TrendingUp,
-  TrendingDown,
   Zap,
   Activity,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { LineChart, Line, XAxis, YAxis, ResponsiveContainer, ReferenceLine, Tooltip } from 'recharts';
 import { format } from 'date-fns';
+import { MiningAnimation } from '@/components/mining-animation';
 
 async function fetchStatus() {
   const res = await fetch('/api/status');
@@ -68,120 +67,136 @@ export default function Home() {
   const roi = pnl?.summary?.roi || 0;
   const isProfit = netPnL >= 0;
 
-  // Prepare chart data
+  // Prepare chart data - only show data from baseline onwards
   const baseline = pnl?.truePnL?.startingBalance || 0;
-  const chartData = (analytics?.balanceHistory || []).map((item: any) => ({
+  const allChartData = (analytics?.balanceHistory || []).map((item: any) => ({
     time: format(new Date(item.timestamp), 'MMM dd HH:mm'),
     sol: item.totalSol || 0,
     isProfit: (item.totalSol || 0) >= baseline,
+    timestamp: item.timestamp,
   }));
+
+  // Filter to only show data points at or above baseline (tracking started)
+  const chartData = allChartData.filter((item: any) => {
+    // Only show points where balance is within reasonable range of baseline
+    return item.sol >= baseline * 0.95; // Show points at or near baseline onwards
+  });
 
   return (
     <DashboardLayout>
       <div className="space-y-4">
         {/* Profit & Loss Hero */}
-        <Card className="border-primary/50 neon-border">
-          <CardContent className="pt-6 pb-6">
-            <div className="flex items-start justify-between gap-6">
-              {/* Main PnL Display */}
-              <div className="flex-1 space-y-4">
-                {/* Profit Amount */}
-                <div>
-                  <div className="flex items-center gap-2 mb-2">
-                    <h3 className="text-sm font-medium text-muted-foreground">Net Profit</h3>
-                    <Badge variant="outline" className={cn(isProfit ? "bg-green-500/20 text-green-500 border-green-500/50" : "bg-red-500/20 text-red-500 border-red-500/50")}>
+        <Card className="border-primary/50 neon-border overflow-hidden">
+          <CardContent className="p-0">
+            {/* Chart Header - Full Width */}
+            {chartData.length > 0 && (
+              <div className="relative bg-gradient-to-b from-black/40 to-transparent">
+                <ResponsiveContainer width="100%" height={100}>
+                  <LineChart data={chartData}>
+                    <defs>
+                      <linearGradient id="colorGradient" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor={isProfit ? '#22c55e' : '#ef4444'} stopOpacity={0.4}/>
+                        <stop offset="95%" stopColor={isProfit ? '#22c55e' : '#ef4444'} stopOpacity={0}/>
+                      </linearGradient>
+                    </defs>
+                    <XAxis dataKey="time" hide />
+                    <YAxis
+                      domain={[
+                        baseline > 0 ? Math.floor(baseline * 0.98) : 'auto',
+                        'auto'
+                      ]}
+                      hide
+                    />
+                    {baseline > 0 && (
+                      <ReferenceLine
+                        y={baseline}
+                        stroke="#555"
+                        strokeDasharray="3 3"
+                        strokeWidth={1}
+                        strokeOpacity={0.6}
+                      />
+                    )}
+                    <Tooltip
+                      contentStyle={{
+                        backgroundColor: '#0a0a0a',
+                        border: '1px solid #333',
+                        borderRadius: '4px',
+                        fontSize: 10,
+                        padding: '4px 8px'
+                      }}
+                      labelStyle={{ color: '#888', fontSize: 9 }}
+                      formatter={(value: any) => [`${Number(value).toFixed(4)} SOL`, '']}
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey="sol"
+                      stroke={isProfit ? '#22c55e' : '#ef4444'}
+                      strokeWidth={2.5}
+                      dot={false}
+                      fill="url(#colorGradient)"
+                      animationDuration={500}
+                    />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+            )}
+
+            {/* Main Content */}
+            <div className="px-6 pt-4 pb-6">
+              <div className="flex items-center justify-between mb-6">
+                {/* Profit Display */}
+                <div className="flex-1">
+                  <div className="flex items-center gap-3 mb-2">
+                    <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Net Profit</h3>
+                    <Badge variant="outline" className={cn(
+                      "text-xs font-bold",
+                      isProfit ? "bg-green-500/20 text-green-500 border-green-500/50" : "bg-red-500/20 text-red-500 border-red-500/50"
+                    )}>
                       {isProfit ? '+' : ''}{roi.toFixed(2)}%
                     </Badge>
                   </div>
-                  <div className="flex items-baseline gap-3">
-                    <span className={cn("text-5xl font-bold tracking-tight", isProfit ? "text-green-500 neon-text" : "text-red-500")}>
+                  <div className="flex items-baseline gap-3 mb-1">
+                    <span className={cn(
+                      "text-6xl font-black tracking-tight",
+                      isProfit ? "text-green-500 neon-text" : "text-red-500"
+                    )}>
                       {isProfit ? '+' : ''}{netPnL.toFixed(4)}
                     </span>
-                    <span className="text-2xl font-semibold text-muted-foreground">SOL</span>
+                    <span className="text-3xl font-bold text-muted-foreground/60">SOL</span>
                   </div>
-                  <p className="text-sm text-muted-foreground mt-2">
+                  <p className="text-xs text-muted-foreground/80">
                     {(pnl?.truePnL?.startingBalance || 0).toFixed(4)} SOL → {(pnl?.truePnL?.currentBalance || 0).toFixed(4)} SOL
                   </p>
                 </div>
 
-                {/* Key Metrics */}
-                <div className="grid grid-cols-3 gap-6 pt-4 border-t border-border/50">
-                  <div className="text-center">
-                    <p className="text-xs text-muted-foreground mb-1">ORB Earned</p>
-                    <p className="text-base font-bold text-emerald-500">{(pnl?.breakdown?.income?.orbFromMining || 0).toFixed(2)}</p>
-                    <p className="text-[10px] text-muted-foreground mt-0.5">(before 10% fee)</p>
-                  </div>
-                  <div className="text-center">
-                    <p className="text-xs text-muted-foreground mb-1">ORB Claimed</p>
-                    <p className="text-base font-bold text-purple-500">{(pnl?.breakdown?.income?.orbSwappedCount || 0).toFixed(2)}</p>
-                    <p className="text-[10px] text-muted-foreground mt-0.5">(after 10% fee)</p>
-                  </div>
-                  <div className="text-center">
-                    <p className="text-xs text-muted-foreground mb-1">Total Fees</p>
-                    <p className="text-base font-bold text-red-500">{(pnl?.summary?.totalExpenses || 0).toFixed(4)} SOL</p>
-                    <p className="text-[10px] text-muted-foreground mt-0.5">(all costs)</p>
-                  </div>
+                {/* Mining Animation */}
+                <div className="flex-shrink-0">
+                  <MiningAnimation
+                    isActive={status?.automation?.isActive || false}
+                  />
                 </div>
-
-                {/* SOL Balance Chart */}
-                {chartData.length > 0 && (
-                  <div className="pt-4 border-t border-border/50">
-                    <p className="text-xs text-muted-foreground mb-3">SOL Balance Over Time</p>
-                    <ResponsiveContainer width="100%" height={120}>
-                      <LineChart data={chartData}>
-                        <XAxis
-                          dataKey="time"
-                          stroke="#666"
-                          tick={{ fontSize: 10 }}
-                          tickLine={false}
-                          axisLine={false}
-                          interval="preserveStartEnd"
-                        />
-                        <YAxis
-                          stroke="#666"
-                          tick={{ fontSize: 10 }}
-                          tickLine={false}
-                          axisLine={false}
-                          domain={['auto', 'auto']}
-                        />
-                        {baseline > 0 && (
-                          <ReferenceLine
-                            y={baseline}
-                            stroke="#888"
-                            strokeDasharray="3 3"
-                            strokeWidth={1}
-                          />
-                        )}
-                        <Tooltip
-                          contentStyle={{
-                            backgroundColor: '#1a1a1a',
-                            border: '1px solid #333',
-                            borderRadius: '6px',
-                            fontSize: 12
-                          }}
-                          labelStyle={{ color: '#fff', marginBottom: 4 }}
-                          formatter={(value: any) => [`${Number(value).toFixed(4)} SOL`, 'Balance']}
-                        />
-                        <Line
-                          type="monotone"
-                          dataKey="sol"
-                          stroke={isProfit ? '#22c55e' : '#ef4444'}
-                          strokeWidth={2}
-                          dot={false}
-                          animationDuration={500}
-                        />
-                      </LineChart>
-                    </ResponsiveContainer>
-                  </div>
-                )}
               </div>
 
-              {/* Icon */}
-              {isProfit ? (
-                <TrendingUp className="h-16 w-16 text-green-500 flex-shrink-0" />
-              ) : (
-                <TrendingDown className="h-16 w-16 text-red-500 flex-shrink-0" />
-              )}
+              {/* Metrics Grid */}
+              <div className="grid grid-cols-3 gap-4">
+                <div className="bg-gradient-to-br from-emerald-500/10 to-transparent border border-emerald-500/20 rounded-lg p-4">
+                  <p className="text-[10px] text-emerald-400/80 uppercase tracking-wide mb-1.5 font-semibold">ORB Earned</p>
+                  <p className="text-2xl font-black text-emerald-400 mb-0.5">{(pnl?.breakdown?.income?.orbFromMining || 0).toFixed(2)}</p>
+                  <p className="text-[9px] text-muted-foreground/60">(before 10% fee)</p>
+                </div>
+
+                <div className="bg-gradient-to-br from-purple-500/10 to-transparent border border-purple-500/20 rounded-lg p-4">
+                  <p className="text-[10px] text-purple-400/80 uppercase tracking-wide mb-1.5 font-semibold">ORB Claimed</p>
+                  <p className="text-2xl font-black text-purple-400 mb-0.5">{(pnl?.breakdown?.income?.orbSwappedCount || 0).toFixed(2)}</p>
+                  <p className="text-[9px] text-muted-foreground/60">(after 10% fee)</p>
+                </div>
+
+                <div className="bg-gradient-to-br from-red-500/10 to-transparent border border-red-500/20 rounded-lg p-4">
+                  <p className="text-[10px] text-red-400/80 uppercase tracking-wide mb-1.5 font-semibold">Total Fees</p>
+                  <p className="text-2xl font-black text-red-400 mb-0.5">{(pnl?.summary?.totalExpenses || 0).toFixed(4)}</p>
+                  <p className="text-[9px] text-muted-foreground/60">SOL (all costs)</p>
+                </div>
+              </div>
             </div>
           </CardContent>
         </Card>
