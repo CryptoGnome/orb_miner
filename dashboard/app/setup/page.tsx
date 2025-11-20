@@ -14,6 +14,7 @@ export default function SetupPage() {
   const [privateKey, setPrivateKey] = useState('');
   const [rpcEndpoint, setRpcEndpoint] = useState('https://api.mainnet-beta.solana.com');
   const [dashboardPassword, setDashboardPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [dashboardPort, setDashboardPort] = useState('3888');
   const [loading, setLoading] = useState(false);
   const [loadingSettings, setLoadingSettings] = useState(true);
@@ -78,6 +79,13 @@ export default function SetupPage() {
         throw new Error('Private key appears to be invalid (too short)');
       }
 
+      // Validate password confirmation if user is setting a new password
+      if (dashboardPassword.trim() && dashboardPassword !== '********') {
+        if (dashboardPassword !== confirmPassword) {
+          throw new Error('Passwords do not match. Please re-enter both passwords.');
+        }
+      }
+
       // Save settings
       const settings: Record<string, string | number> = {
         RPC_ENDPOINT: rpcEndpoint.trim() || 'https://api.mainnet-beta.solana.com',
@@ -133,9 +141,29 @@ export default function SetupPage() {
             </div>
             <CardTitle className="text-2xl">Setup Complete!</CardTitle>
             <CardDescription>
-              Your bot is now configured and ready to run. Redirecting...
+              Your configuration has been saved successfully.
             </CardDescription>
           </CardHeader>
+          <CardContent className="space-y-4">
+            <Alert>
+              <AlertCircle className="h-4 w-4" />
+              <AlertDescription className="space-y-2">
+                <p className="font-semibold">Important: Restart Required</p>
+                <p>To start mining, you need to restart the bot:</p>
+                <ol className="list-decimal ml-6 mt-2 space-y-1">
+                  <li>Go to your terminal/command prompt where the bot is running</li>
+                  <li>Press <kbd className="px-2 py-1 bg-muted rounded font-mono text-sm">Ctrl+C</kbd> to stop the bot</li>
+                  <li>Run <code className="px-2 py-1 bg-muted rounded font-mono text-sm">npm start</code> to restart</li>
+                </ol>
+                <p className="mt-2 text-sm text-muted-foreground">
+                  If using PM2: <code className="px-2 py-1 bg-muted rounded font-mono text-sm">pm2 restart orb-bot</code>
+                </p>
+              </AlertDescription>
+            </Alert>
+            <p className="text-center text-muted-foreground">
+              Redirecting to dashboard...
+            </p>
+          </CardContent>
         </Card>
       </div>
     );
@@ -227,6 +255,7 @@ export default function SetupPage() {
                   // Clear stars when user clicks to edit
                   if (e.target.value === '********') {
                     setDashboardPassword('');
+                    setConfirmPassword('');
                   }
                 }}
                 disabled={loading}
@@ -237,6 +266,29 @@ export default function SetupPage() {
                   : 'Recommended for remote access: Set a strong password to protect your dashboard'}
               </p>
             </div>
+
+            {/* Confirm Dashboard Password Input - Only show if user is entering a new password */}
+            {dashboardPassword.trim() && dashboardPassword !== '********' && (
+              <div className="space-y-2">
+                <Label htmlFor="confirmPassword" className="flex items-center gap-2 text-base">
+                  <Lock className="h-4 w-4" />
+                  Confirm Dashboard Password
+                  <span className="text-red-500">*</span>
+                </Label>
+                <Input
+                  id="confirmPassword"
+                  type="password"
+                  placeholder="Re-enter your dashboard password"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  disabled={loading}
+                  required
+                />
+                <p className="text-sm text-muted-foreground">
+                  Please re-enter your password to confirm
+                </p>
+              </div>
+            )}
 
             {/* Dashboard Port Input */}
             <div className="space-y-2">

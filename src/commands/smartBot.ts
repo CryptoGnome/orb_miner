@@ -25,7 +25,6 @@ import { isSetupNeeded } from '../utils/setupWizard';
 import { sleep } from '../utils/retry';
 import { TransactionInstruction, SystemProgram, PublicKey } from '@solana/web3.js';
 import BN from 'bn.js';
-import { exec } from 'child_process';
 import logger, { ui } from '../utils/logger';
 import {
   initializeDatabase,
@@ -1372,34 +1371,14 @@ export async function smartBotCommand(): Promise<void> {
       ui.blank();
       ui.error('PRIVATE_KEY not configured!');
       ui.blank();
-      ui.info('Opening setup wizard in your browser...');
 
       // Get dashboard port from configuration
       const port = await getDashboardPort();
       const setupUrl = `http://localhost:${port}/setup`;
 
-      // Open browser automatically (cross-platform) and wait for it
-      const openCommand = process.platform === 'win32'
-        ? `start ${setupUrl}`
-        : process.platform === 'darwin'
-        ? `open ${setupUrl}`
-        : `xdg-open ${setupUrl}`;
-
-      await new Promise<void>((resolve) => {
-        exec(openCommand, (error) => {
-          if (error) {
-            ui.warning('Could not open browser automatically');
-            ui.info(`Please manually open: ${setupUrl}`);
-          } else {
-            ui.success('✓ Browser opened to setup page');
-          }
-          // Always resolve to continue
-          setTimeout(resolve, 500);
-        });
-      });
-
+      ui.info('The setup wizard has been opened in your browser.');
       ui.blank();
-      ui.info('The setup wizard will guide you through:');
+      ui.info('The wizard will guide you through:');
       ui.info('  • Wallet Private Key (encrypted & secure)');
       ui.info('  • RPC Endpoint (optional, has default)');
       ui.blank();
