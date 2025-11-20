@@ -134,21 +134,19 @@ export function Sidebar() {
             </div>
             <div className="flex justify-between items-center">
               <span className="text-xs text-muted-foreground">Threshold</span>
-              <span className="text-xs font-mono">{motherloadThreshold} ORB</span>
+              <Badge
+                variant="outline"
+                className={cn(
+                  "text-xs font-mono",
+                  isAboveThreshold
+                    ? "bg-blue-500/20 text-blue-400 border-blue-500/50"
+                    : "bg-red-500/20 text-red-400 border-red-500/50"
+                )}
+              >
+                {motherloadThreshold} ORB
+              </Badge>
             </div>
           </div>
-
-          {/* Automation Status */}
-          {hasAutomation && (
-            <div className="pt-2 border-t border-border/50">
-              <div className="flex justify-between items-center">
-                <span className="text-xs text-muted-foreground">Automation</span>
-                <Badge variant="outline" className="bg-cyan-500/20 text-cyan-500 border-cyan-500/50 text-xs">
-                  {status?.balances?.automationSol?.toFixed(4)} SOL
-                </Badge>
-              </div>
-            </div>
-          )}
         </div>
 
         {/* Dashboard Status */}
