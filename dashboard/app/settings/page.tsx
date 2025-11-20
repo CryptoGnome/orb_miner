@@ -2,7 +2,7 @@
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { DashboardLayout } from '@/components/layout/dashboard-layout';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
@@ -189,7 +189,6 @@ export default function SettingsPage() {
           </TabsList>
 
           {categories.map((category) => {
-            const config = CATEGORY_CONFIG[category];
             const categorySettings = Object.values(settings).filter(
               (s: any) => s.category === category
             );
@@ -197,14 +196,7 @@ export default function SettingsPage() {
             return (
               <TabsContent key={category} value={category} className="space-y-4">
                 <Card>
-                  <CardHeader>
-                    <CardTitle className="flex items-center gap-2">
-                      <config.icon className="h-5 w-5" />
-                      {config.label}
-                    </CardTitle>
-                    <CardDescription>{config.description}</CardDescription>
-                  </CardHeader>
-                  <CardContent className="space-y-6">
+                  <CardContent className="space-y-6 pt-6">
                     {categorySettings.map((setting: any) => (
                       <div key={setting.key} className="space-y-2">
                         <div className="flex items-start justify-between gap-4">
