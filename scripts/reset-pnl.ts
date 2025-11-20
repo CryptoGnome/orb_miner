@@ -10,7 +10,7 @@
 import * as fs from "fs";
 import * as path from "path";
 import * as readline from "readline";
-import { getWallet, getBalances, getSolBalance } from "../src/utils/wallet";
+import { getWallet, getBalances } from "../src/utils/wallet";
 import { getConnection } from "../src/utils/solana";
 import {
   getAutomationPDA,
@@ -113,10 +113,10 @@ async function resetPnL() {
     `  Automation Balance: ${automationInfo.balance.toFixed(4)} SOL`
   );
   console.log(
-    `  Claimable SOL: ${(Number(minerData.rewardsSol) / 1e9).toFixed(4)} SOL`
+    `  Claimable SOL: ${minerData ? (Number(minerData.rewardsSol) / 1e9).toFixed(4) : '0.0000'} SOL`
   );
   console.log(
-    `  Claimable ORB: ${(Number(minerData.rewardsOre) / 1e9).toFixed(4)} ORB`
+    `  Claimable ORB: ${minerData ? (Number(minerData.rewardsOre) / 1e9).toFixed(4) : '0.0000'} ORB`
   );
   console.log(`  Wallet ORB: ${balances.orb.toFixed(4)} ORB`);
 
@@ -140,7 +140,7 @@ async function resetPnL() {
       await recordTransaction({
         type: "automation_setup",
         signature: "MANUAL_RESET_BASELINE",
-        roundId: null,
+        roundId: undefined,
         solAmount: automationInfo.balance,
         orbAmount: 0,
         status: "success",
