@@ -78,14 +78,16 @@ npm run start:dashboard
 
 # 6. Start with PM2 for 24/7 operation
 npm install -g pm2
-pm2 start ecosystem.config.js
+pm2 start npm --name "orb-bot" -- run start:bot && pm2 start npm --name "orb-dashboard" -- run start:dashboard
 pm2 save
 pm2 startup  # Follow the instructions it gives you
 
 # 7. Monitor with PM2
-pm2 logs           # View logs
-pm2 status         # Check status
-pm2 restart ecosystem.config.js    # Restart both processes (SAFE)
+pm2 logs              # View all logs (real-time)
+pm2 logs orb-bot      # Bot logs only
+pm2 logs orb-dashboard # Dashboard logs only
+pm2 status            # Check status
+pm2 restart orb-bot orb-dashboard    # Restart both processes (SAFE)
 ```
 
 **Access Dashboard Remotely:** `http://YOUR_SERVER_IP:3888`
@@ -240,9 +242,15 @@ For running the bot 24/7 on a Linux server, see **[Option 2: Server Deployment](
 
 1. ✅ **Dashboard first** - Run `npm run start:dashboard` to access setup wizard
 2. ✅ **Configure settings** - Visit `http://YOUR_SERVER_IP:3888/setup` and set PRIVATE_KEY + password
-3. ✅ **Start with PM2** - Use `pm2 start ecosystem.config.js` for 24/7 operation
+3. ✅ **Start with PM2** - Use the PM2 start command below for 24/7 operation
 
 **Why this order?** The bot cannot start without `PRIVATE_KEY` configured. The dashboard provides a secure web interface to set this up remotely.
+
+### PM2 Start Command
+```bash
+pm2 start npm --name "orb-bot" -- run start:bot && pm2 start npm --name "orb-dashboard" -- run start:dashboard
+pm2 save
+```
 
 ### Updating & Restarting
 
@@ -265,9 +273,6 @@ npm run build:dashboard
 # 4. Restart ONLY orb miner processes (safe for shared servers)
 pm2 restart orb-bot orb-dashboard
 
-# OR restart using ecosystem file
-pm2 restart ecosystem.config.js
-
 # 5. Verify it's working
 pm2 logs orb-bot --lines 20
 ```
@@ -288,7 +293,6 @@ pm2 logs orb-dashboard  # Dashboard only
 
 # Restart processes (recommended - safe methods)
 pm2 restart orb-bot orb-dashboard    # Restart only orb miner by name (RECOMMENDED)
-pm2 restart ecosystem.config.js      # Restart using ecosystem file (ALTERNATIVE)
 # CAUTION: Only use 'pm2 restart all' if no other PM2 processes are running!
 pm2 stop orb-bot orb-dashboard       # Stop only orb miner
 pm2 delete orb-bot orb-dashboard     # Remove from PM2
@@ -301,17 +305,16 @@ pm2 startup  # Follow the instructions it outputs
 pm2 monit
 ```
 
-### Ecosystem Configuration
+### PM2 Logs
 
-The included `ecosystem.config.js` runs bot and dashboard as separate processes:
+All logs are automatically captured by PM2 and stored in `~/.pm2/logs/`:
 
-- **orb-bot**: Main mining bot (max 1GB RAM)
-- **orb-dashboard**: Web dashboard (max 500MB RAM)
-- Auto-restart on crashes
-- Separate log files per process
-- Resource limits to prevent memory leaks
+- `~/.pm2/logs/orb-bot-out.log` - Bot output
+- `~/.pm2/logs/orb-bot-error.log` - Bot errors
+- `~/.pm2/logs/orb-dashboard-out.log` - Dashboard output
+- `~/.pm2/logs/orb-dashboard-error.log` - Dashboard errors
 
-**Note:** Update the `cwd` path in `ecosystem.config.js` to match your installation directory.
+View logs in real-time: `pm2 logs` or `pm2 logs orb-bot` or `pm2 logs orb-dashboard`
 
 ---
 
