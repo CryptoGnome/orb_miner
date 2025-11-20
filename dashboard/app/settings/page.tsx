@@ -9,7 +9,7 @@ import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Settings, TrendingUp, Zap, RefreshCw, DollarSign, Shield, Globe, AlertTriangle } from 'lucide-react';
+import { Settings, TrendingUp, Zap, RefreshCw, DollarSign, Shield, Globe } from 'lucide-react';
 import { toast } from 'sonner';
 import { useState, useEffect } from 'react';
 
@@ -152,26 +152,17 @@ export default function SettingsPage() {
             Settings
           </h1>
           <p className="text-muted-foreground mt-2">
-            Configure your mining bot. Changes take effect immediately and override .env values.
+            Configure your mining bot. Changes take effect immediately.
           </p>
         </div>
 
-        {/* Warning Banner */}
-        <Card className="border-yellow-500/50 bg-yellow-500/10">
-          <CardContent className="pt-6">
-            <div className="flex items-start gap-3">
-              <AlertTriangle className="h-5 w-5 text-yellow-500 flex-shrink-0 mt-0.5" />
-              <div>
-                <p className="text-sm font-medium text-yellow-500">Important Security Note</p>
-                <p className="text-xs text-muted-foreground mt-1">
-                  Settings are stored encrypted in the database and override .env values. Private keys
-                  are encrypted using AES-256-GCM. For maximum security, consider keeping sensitive
-                  values in .env with proper file permissions.
-                </p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+        {/* Security Notice */}
+        <div className="flex items-center gap-2 px-3 py-2 rounded-md border border-yellow-500/30 bg-yellow-500/5">
+          <Shield className="h-3.5 w-3.5 text-yellow-500/70" />
+          <p className="text-xs text-muted-foreground">
+            Sensitive data encrypted with AES-256-GCM
+          </p>
+        </div>
 
         {/* Settings Tabs */}
         <Tabs defaultValue="network" className="w-full">
