@@ -13,8 +13,9 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { LineChart, Line, XAxis, YAxis, ResponsiveContainer, ReferenceLine, Tooltip } from 'recharts';
-import { format } from 'date-fns';
+import { format, subDays, subMonths } from 'date-fns';
 import { MiningAnimation } from '@/components/mining-animation';
+import { useState } from 'react';
 
 async function fetchStatus() {
   const res = await fetch('/api/status');
@@ -34,7 +35,11 @@ async function fetchAnalytics() {
   return res.json();
 }
 
+type TimeRange = '1d' | '7d' | '1m' | 'all';
+
 export default function Home() {
+  const [timeRange, setTimeRange] = useState<TimeRange>('7d');
+
   const { data: status, isLoading: statusLoading } = useQuery({
     queryKey: ['status'],
     queryFn: fetchStatus,
@@ -69,18 +74,60 @@ export default function Home() {
 
   // Prepare chart data - only show data from baseline onwards
   const baseline = pnl?.truePnL?.startingBalance || 0;
+  const now = new Date();
+
+  // Get time cutoff based on selected range
+  const getTimeCutoff = () => {
+    switch (timeRange) {
+      case '1d':
+        return subDays(now, 1);
+      case '7d':
+        return subDays(now, 7);
+      case '1m':
+        return subMonths(now, 1);
+      case 'all':
+      default:
+        return null;
+    }
+  };
+
+  const timeCutoff = getTimeCutoff();
+
   const allChartData = (analytics?.balanceHistory || []).map((item: any) => ({
     time: format(new Date(item.timestamp), 'MMM dd HH:mm'),
     sol: item.totalSol || 0,
     isProfit: (item.totalSol || 0) >= baseline,
-    timestamp: item.timestamp,
+    timestamp: new Date(item.timestamp),
   }));
 
-  // Filter to only show data points at or above baseline (tracking started)
+  // Filter by time range and baseline
   const chartData = allChartData.filter((item: any) => {
-    // Only show points where balance is within reasonable range of baseline
-    return item.sol >= baseline * 0.95; // Show points at or near baseline onwards
+    // Only show points at or above baseline
+    const isAboveBaseline = item.sol >= baseline * 0.95;
+
+    // Filter by time range
+    const isInTimeRange = timeCutoff === null || item.timestamp >= timeCutoff;
+
+    return isAboveBaseline && isInTimeRange;
   });
+
+  // Calculate dynamic Y-axis range based on actual data
+  const getYAxisDomain = () => {
+    if (chartData.length === 0) return ['auto', 'auto'];
+
+    const values = chartData.map((d: any) => d.sol);
+    const minValue = Math.min(...values);
+    const maxValue = Math.max(...values);
+    const range = maxValue - minValue;
+
+    // Add 10% padding above and below for better visualization
+    const padding = range * 0.1 || 0.001; // Minimum padding if range is 0
+
+    return [
+      Math.max(baseline * 0.98, minValue - padding), // Don't go below baseline
+      maxValue + padding
+    ];
+  };
 
   return (
     <DashboardLayout>
@@ -91,6 +138,24 @@ export default function Home() {
             {/* Chart Header - Full Width */}
             {chartData.length > 0 && (
               <div className="relative bg-gradient-to-b from-black/40 to-transparent">
+                {/* Time Range Selector */}
+                <div className="absolute top-2 right-4 z-10 flex gap-1">
+                  {(['1d', '7d', '1m', 'all'] as TimeRange[]).map((range) => (
+                    <button
+                      key={range}
+                      onClick={() => setTimeRange(range)}
+                      className={cn(
+                        "px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider rounded transition-all",
+                        timeRange === range
+                          ? "bg-primary/30 text-primary border border-primary/50"
+                          : "bg-black/40 text-muted-foreground/60 border border-transparent hover:bg-black/60 hover:text-muted-foreground"
+                      )}
+                    >
+                      {range}
+                    </button>
+                  ))}
+                </div>
+
                 <ResponsiveContainer width="100%" height={100}>
                   <LineChart data={chartData}>
                     <defs>
@@ -101,10 +166,7 @@ export default function Home() {
                     </defs>
                     <XAxis dataKey="time" hide />
                     <YAxis
-                      domain={[
-                        baseline > 0 ? Math.floor(baseline * 0.98) : 'auto',
-                        'auto'
-                      ]}
+                      domain={getYAxisDomain()}
                       hide
                     />
                     {baseline > 0 && (
