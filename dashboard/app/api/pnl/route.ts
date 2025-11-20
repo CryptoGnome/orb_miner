@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { ensureBotInitialized } from '@/lib/init-bot';
 import { getCompletePnLSummary } from '@bot/utils/pnl';
 import { Connection, PublicKey } from '@solana/web3.js';
-import { config } from '@bot/utils/config';
+import { config, loadAndCacheConfig } from '@bot/utils/config';
 import { fetchMiner, fetchStake, getAutomationPDA } from '@bot/utils/accounts';
 import { getWallet, getBalances } from '@bot/utils/wallet';
 import { getOrbPrice } from '@bot/utils/jupiter';
@@ -14,6 +14,9 @@ export async function GET() {
   try {
     // Ensure bot utilities are initialized
     await ensureBotInitialized();
+
+    // Load configuration from database
+    await loadAndCacheConfig();
 
     const connection = new Connection(config.rpcEndpoint);
     const wallet = getWallet();

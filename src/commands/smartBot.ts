@@ -20,10 +20,12 @@ import {
 } from '../utils/program';
 import { getConnection, getCurrentSlot } from '../utils/solana';
 import { swapOrbToSol, getOrbPrice } from '../utils/jupiter';
-import { config } from '../utils/config';
+import { loadAndCacheConfig, refreshConfig, config } from '../utils/config';
+import { isSetupNeeded } from '../utils/setupWizard';
 import { sleep } from '../utils/retry';
 import { TransactionInstruction, SystemProgram, PublicKey } from '@solana/web3.js';
 import BN from 'bn.js';
+import { exec } from 'child_process';
 import logger, { ui } from '../utils/logger';
 import {
   initializeDatabase,
@@ -1348,6 +1350,54 @@ export async function smartBotCommand(): Promise<void> {
     ui.info('Initializing profit tracking database...');
     await initializeDatabase();
 
+    // Load configuration from database (with default initialization)
+    ui.info('Loading configuration from database...');
+    let config = await loadAndCacheConfig();
+
+    // Check if first-run setup is needed
+    if (isSetupNeeded(config.privateKey)) {
+      ui.blank();
+      ui.header('🚀 FIRST-TIME SETUP REQUIRED');
+      ui.blank();
+      ui.error('PRIVATE_KEY not configured!');
+      ui.blank();
+      ui.info('Opening setup wizard in your browser...');
+
+      // Open browser automatically (cross-platform) and wait for it
+      const setupUrl = 'http://localhost:3000/setup';
+      const openCommand = process.platform === 'win32'
+        ? `start ${setupUrl}`
+        : process.platform === 'darwin'
+        ? `open ${setupUrl}`
+        : `xdg-open ${setupUrl}`;
+
+      await new Promise<void>((resolve) => {
+        exec(openCommand, (error) => {
+          if (error) {
+            ui.warning('Could not open browser automatically');
+            ui.info('Please manually open: http://localhost:3000/setup');
+          } else {
+            ui.success('✓ Browser opened to setup page');
+          }
+          // Always resolve to continue
+          setTimeout(resolve, 500);
+        });
+      });
+
+      ui.blank();
+      ui.info('The setup wizard will guide you through:');
+      ui.info('  • Wallet Private Key (encrypted & secure)');
+      ui.info('  • RPC Endpoint (optional, has default)');
+      ui.blank();
+      ui.warning('Once setup is complete, restart the bot with: npm run start:bot');
+      ui.blank();
+
+      throw new Error('Setup required - visit http://localhost:3000/setup');
+    }
+
+    ui.success('Configuration loaded successfully');
+    ui.blank();
+
     ui.header('🤖 ORB MINING BOT - AUTONOMOUS MODE');
     ui.info('Fully automated mining • Press Ctrl+C to stop');
     ui.blank();
@@ -1433,6 +1483,14 @@ export async function smartBotCommand(): Promise<void> {
         if (currentRoundId !== lastRoundId) {
           ui.section(`ROUND ${currentRoundId}`);
           lastRoundId = currentRoundId;
+
+          // Refresh config from database to pick up any setting changes from dashboard
+          try {
+            config = await refreshConfig();
+            logger.debug('Configuration refreshed from database');
+          } catch (error) {
+            logger.warn('Failed to refresh config, using cached version:', error);
+          }
 
           // Check motherload FIRST - don't create automation if below threshold
           const treasury = await fetchTreasury();

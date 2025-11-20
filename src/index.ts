@@ -1,4 +1,3 @@
-import { config } from './utils/config';
 import logger from './utils/logger';
 import { smartBotCommand } from './commands/smartBot';
 import { pnlCommand } from './commands/pnl';
@@ -56,8 +55,7 @@ async function main() {
 
     // Default: Run the smart autonomous bot
     logger.info('🤖 ORB Mining Bot');
-    logger.info(`Network: ${config.network}`);
-    logger.info(`ORB Program: ${config.orbProgramId.toBase58()}`);
+    logger.info('Loading configuration from database...');
     logger.info('');
 
     await smartBotCommand();

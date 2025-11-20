@@ -1,9 +1,12 @@
-import dotenv from 'dotenv';
 import { PublicKey } from '@solana/web3.js';
 import logger from './logger';
-
-// Load environment variables
-dotenv.config();
+import {
+  loadSettingsFromDB,
+  getSettingValue,
+  getNumberSetting,
+  getBooleanSetting,
+  initializeDefaultSettings
+} from './settingsLoader';
 
 export interface Config {
   // Wallet & Network
@@ -49,7 +52,7 @@ export interface Config {
 
   // Smart Bot - Auto-Swap Settings
   autoSwapEnabled: boolean;
-  walletOrbSwapThreshold: number; // Swap when wallet ORB >= this (independent trigger)
+  walletOrbSwapThreshold: number;
   minOrbPriceUsd: number;
 
   // Smart Bot - Auto-Stake Settings
@@ -74,7 +77,7 @@ export interface Config {
   jupiterApiUrl: string;
 
   // Priority Fee Settings (Dynamic Fee Optimization)
-  priorityFeeLevel: string; // 'low' | 'medium' | 'high' | 'veryHigh'
+  priorityFeeLevel: string;
   minPriorityFeeMicroLamports: number;
   maxPriorityFeeMicroLamports: number;
 
@@ -86,117 +89,110 @@ export interface Config {
   incognitoMode: boolean;
 }
 
-function getEnv(key: string, defaultValue?: string): string {
-  const value = process.env[key] || defaultValue;
-  if (!value) {
-    throw new Error(`Missing required environment variable: ${key}`);
-  }
-  return value;
-}
-
-function getEnvNumber(key: string, defaultValue: number): number {
-  const value = process.env[key];
-  return value ? parseFloat(value) : defaultValue;
-}
-
-function getEnvBoolean(key: string, defaultValue: boolean): boolean {
-  const value = process.env[key];
-  if (!value) return defaultValue;
-  return value.toLowerCase() === 'true';
-}
-
-function getEnvPriorityFee(key: string, defaultValue: number | 'auto'): number | 'auto' {
-  const value = process.env[key];
-  if (!value) return defaultValue;
-  if (value.toLowerCase() === 'auto') return 'auto';
-  const numValue = parseInt(value);
-  return isNaN(numValue) ? defaultValue : numValue;
-}
-
-export function loadConfig(): Config {
+/**
+ * Load configuration from database only
+ * Initializes defaults if database is empty
+ */
+export async function loadConfigWithDB(): Promise<Config> {
   try {
+    // Initialize defaults first (safe to run multiple times - uses INSERT OR IGNORE)
+    await initializeDefaultSettings();
+
+    // Load settings from database
+    const dbSettings = await loadSettingsFromDB();
+
+    function getPriorityFee(key: string, defaultValue: number | 'auto'): number | 'auto' {
+      const value = getSettingValue(dbSettings, key, String(defaultValue));
+      if (value.toLowerCase() === 'auto') return 'auto';
+      const numValue = parseInt(value);
+      return isNaN(numValue) ? defaultValue : numValue;
+    }
+
     const config: Config = {
       // Wallet & Network
-      privateKey: getEnv('PRIVATE_KEY'),
-      rpcEndpoint: getEnv('RPC_ENDPOINT', 'https://api.mainnet-beta.solana.com'),
-      orbProgramId: new PublicKey(getEnv('ORB_PROGRAM_ID')),
-      orbTokenMint: new PublicKey(getEnv('ORB_TOKEN_MINT')),
-      orbFeeCollector: new PublicKey(getEnv('ORB_FEE_COLLECTOR', '577HqbrnKM4micsY52rW8j6i9W8SmzV3FprfBCDneNpF')),
-      network: getEnv('NETWORK', 'mainnet-beta'),
+      // Note: PRIVATE_KEY may be empty on first run - wizard will handle this
+      privateKey: getSettingValue(dbSettings, 'PRIVATE_KEY', ''),
+      rpcEndpoint: getSettingValue(dbSettings, 'RPC_ENDPOINT', 'https://api.mainnet-beta.solana.com'),
+      orbProgramId: new PublicKey(getSettingValue(dbSettings, 'ORB_PROGRAM_ID', 'boreXQWsKpsJz5RR9BMtN8Vk4ndAk23sutj8spWYhwk')),
+      orbTokenMint: new PublicKey(getSettingValue(dbSettings, 'ORB_TOKEN_MINT', 'orebyr4mDiPDVgnfqvF5xiu5gKnh94Szuz8dqgNqdJn')),
+      orbFeeCollector: new PublicKey(getSettingValue(dbSettings, 'ORB_FEE_COLLECTOR', '9DTThTbggnp2P2ZGLFRfN1A3j5JUsXez1dRJak3TixB2')),
+      network: getSettingValue(dbSettings, 'NETWORK', 'mainnet-beta'),
 
       // Bot Action
-      botAction: getEnv('BOT_ACTION', 'auto-deploy') as Config['botAction'],
+      botAction: getSettingValue(dbSettings, 'BOT_ACTION', 'auto-deploy') as Config['botAction'],
 
       // Deployment Settings
-      deployStrategy: getEnv('DEPLOY_STRATEGY', 'all'),
-      solPerDeployment: getEnvNumber('SOL_PER_DEPLOYMENT', 0.01),
-      motherloadThreshold: getEnvNumber('MOTHERLOAD_THRESHOLD', 50),
-      checkRoundIntervalMs: getEnvNumber('CHECK_ROUND_INTERVAL_MS', 10000),
-      minSolForDeployment: getEnvNumber('MIN_SOL_FOR_DEPLOYMENT', 0.3),
+      deployStrategy: getSettingValue(dbSettings, 'DEPLOY_STRATEGY', 'all'),
+      solPerDeployment: getNumberSetting(dbSettings, 'SOL_PER_DEPLOYMENT', 0.01),
+      motherloadThreshold: getNumberSetting(dbSettings, 'MOTHERLOAD_THRESHOLD', 100),
+      checkRoundIntervalMs: getNumberSetting(dbSettings, 'CHECK_ROUND_INTERVAL_MS', 10000),
+      minSolForDeployment: getNumberSetting(dbSettings, 'MIN_SOL_FOR_DEPLOYMENT', 0.3),
 
       // Production Cost Analysis
-      enableProductionCostCheck: getEnvBoolean('ENABLE_PRODUCTION_COST_CHECK', true),
-      minExpectedValue: getEnvNumber('MIN_EXPECTED_VALUE', 0),
-      estimatedCompetitionMultiplier: getEnvNumber('ESTIMATED_COMPETITION_MULTIPLIER', 10),
+      enableProductionCostCheck: getBooleanSetting(dbSettings, 'ENABLE_PRODUCTION_COST_CHECK', true),
+      minExpectedValue: getNumberSetting(dbSettings, 'MIN_EXPECTED_VALUE', 0),
+      estimatedCompetitionMultiplier: getNumberSetting(dbSettings, 'ESTIMATED_COMPETITION_MULTIPLIER', 10),
 
       // Smart Bot - Automation Account Settings
-      initialAutomationBudgetPct: getEnvNumber('INITIAL_AUTOMATION_BUDGET_PCT', 90),
+      initialAutomationBudgetPct: getNumberSetting(dbSettings, 'INITIAL_AUTOMATION_BUDGET_PCT', 90),
 
       // Smart Bot - Auto-Claim Thresholds
-      autoClaimSolThreshold: getEnvNumber('AUTO_CLAIM_SOL_THRESHOLD', 0.1),
-      autoClaimOrbThreshold: getEnvNumber('AUTO_CLAIM_ORB_THRESHOLD', 1.0),
-      autoClaimStakingOrbThreshold: getEnvNumber('AUTO_CLAIM_STAKING_ORB_THRESHOLD', 0.5),
-      checkRewardsIntervalMs: getEnvNumber('CHECK_REWARDS_INTERVAL_MS', 300000),
-      checkStakingRewardsIntervalMs: getEnvNumber('CHECK_STAKING_REWARDS_INTERVAL_MS', 600000),
+      autoClaimSolThreshold: getNumberSetting(dbSettings, 'AUTO_CLAIM_SOL_THRESHOLD', 0.1),
+      autoClaimOrbThreshold: getNumberSetting(dbSettings, 'AUTO_CLAIM_ORB_THRESHOLD', 1.0),
+      autoClaimStakingOrbThreshold: getNumberSetting(dbSettings, 'AUTO_CLAIM_STAKING_ORB_THRESHOLD', 0.5),
+      checkRewardsIntervalMs: getNumberSetting(dbSettings, 'CHECK_REWARDS_INTERVAL_MS', 300000),
+      checkStakingRewardsIntervalMs: getNumberSetting(dbSettings, 'CHECK_STAKING_REWARDS_INTERVAL_MS', 600000),
 
-      // Claim Settings (legacy - for backward compatibility)
-      autoClaimEnabled: getEnvBoolean('AUTO_CLAIM_ENABLED', true),
-      claimThresholdSol: getEnvNumber('CLAIM_THRESHOLD_SOL', 1.0),
-      claimThresholdOrb: getEnvNumber('CLAIM_THRESHOLD_ORB', 100),
-      claimType: getEnv('CLAIM_TYPE', 'both') as Config['claimType'],
-      claimFromMining: getEnvBoolean('CLAIM_FROM_MINING', true),
-      claimFromStaking: getEnvBoolean('CLAIM_FROM_STAKING', true),
+      // Claim Settings (legacy)
+      autoClaimEnabled: getBooleanSetting(dbSettings, 'AUTO_CLAIM_ENABLED', true),
+      claimThresholdSol: getNumberSetting(dbSettings, 'CLAIM_THRESHOLD_SOL', 1.0),
+      claimThresholdOrb: getNumberSetting(dbSettings, 'CLAIM_THRESHOLD_ORB', 100),
+      claimType: getSettingValue(dbSettings, 'CLAIM_TYPE', 'both') as Config['claimType'],
+      claimFromMining: getBooleanSetting(dbSettings, 'CLAIM_FROM_MINING', true),
+      claimFromStaking: getBooleanSetting(dbSettings, 'CLAIM_FROM_STAKING', true),
 
       // Smart Bot - Auto-Swap Settings
-      autoSwapEnabled: getEnvBoolean('AUTO_SWAP_ENABLED', true),
-      walletOrbSwapThreshold: getEnvNumber('WALLET_ORB_SWAP_THRESHOLD', 0.1),
-      minOrbPriceUsd: getEnvNumber('MIN_ORB_PRICE_USD', 0),
+      autoSwapEnabled: getBooleanSetting(dbSettings, 'AUTO_SWAP_ENABLED', true),
+      walletOrbSwapThreshold: getNumberSetting(dbSettings, 'WALLET_ORB_SWAP_THRESHOLD', 0.1),
+      minOrbPriceUsd: getNumberSetting(dbSettings, 'MIN_ORB_PRICE_USD', 30),
 
       // Smart Bot - Auto-Stake Settings
-      autoStakeEnabled: getEnvBoolean('AUTO_STAKE_ENABLED', false),
-      stakeOrbThreshold: getEnvNumber('STAKE_ORB_THRESHOLD', 50),
+      autoStakeEnabled: getBooleanSetting(dbSettings, 'AUTO_STAKE_ENABLED', false),
+      stakeOrbThreshold: getNumberSetting(dbSettings, 'STAKE_ORB_THRESHOLD', 50),
 
       // Auto-Deploy Settings (legacy)
-      autoDeployIterations: getEnvNumber('AUTO_DEPLOY_ITERATIONS', 0),
-      deployMaxRetries: getEnvNumber('DEPLOY_MAX_RETRIES', 3),
-      smartRoundManagement: getEnvBoolean('SMART_ROUND_MANAGEMENT', true),
-      pauseIfLowSol: getEnvBoolean('PAUSE_IF_LOW_SOL', true),
-      resumeNextRound: getEnvBoolean('RESUME_NEXT_ROUND', true),
+      autoDeployIterations: getNumberSetting(dbSettings, 'AUTO_DEPLOY_ITERATIONS', 0),
+      deployMaxRetries: getNumberSetting(dbSettings, 'DEPLOY_MAX_RETRIES', 3),
+      smartRoundManagement: getBooleanSetting(dbSettings, 'SMART_ROUND_MANAGEMENT', true),
+      pauseIfLowSol: getBooleanSetting(dbSettings, 'PAUSE_IF_LOW_SOL', true),
+      resumeNextRound: getBooleanSetting(dbSettings, 'RESUME_NEXT_ROUND', true),
 
       // Jupiter Integration (legacy)
-      enableJupiterSwap: getEnvBoolean('ENABLE_JUPITER_SWAP', true),
-      autoSwapWhenLowSol: getEnvBoolean('AUTO_SWAP_WHEN_LOW_SOL', true),
-      swapOrbAmount: getEnvNumber('SWAP_ORB_AMOUNT', 10),
-      minOrbToKeep: getEnvNumber('MIN_ORB_TO_KEEP', 5),
-      minOrbSwapAmount: getEnvNumber('MIN_ORB_SWAP_AMOUNT', 0.1),
-      slippageBps: getEnvNumber('SLIPPAGE_BPS', 50),
-      swapPriorityFeeLamports: getEnvPriorityFee('SWAP_PRIORITY_FEE_LAMPORTS', 100000),
-      jupiterApiUrl: getEnv('JUPITER_API_URL', 'https://quote-api.jup.ag/v6'),
+      enableJupiterSwap: getBooleanSetting(dbSettings, 'ENABLE_JUPITER_SWAP', true),
+      autoSwapWhenLowSol: getBooleanSetting(dbSettings, 'AUTO_SWAP_WHEN_LOW_SOL', true),
+      swapOrbAmount: getNumberSetting(dbSettings, 'SWAP_ORB_AMOUNT', 10),
+      minOrbToKeep: getNumberSetting(dbSettings, 'MIN_ORB_TO_KEEP', 5),
+      minOrbSwapAmount: getNumberSetting(dbSettings, 'MIN_ORB_SWAP_AMOUNT', 0.1),
+      slippageBps: getNumberSetting(dbSettings, 'SLIPPAGE_BPS', 50),
+      swapPriorityFeeLamports: getPriorityFee('SWAP_PRIORITY_FEE_LAMPORTS', 100000),
+      jupiterApiUrl: getSettingValue(dbSettings, 'JUPITER_API_URL', 'https://quote-api.jup.ag/v6'),
 
       // Priority Fee Settings (Dynamic Fee Optimization)
-      priorityFeeLevel: getEnv('PRIORITY_FEE_LEVEL', 'medium'),
-      minPriorityFeeMicroLamports: getEnvNumber('MIN_PRIORITY_FEE_MICRO_LAMPORTS', 100),
-      maxPriorityFeeMicroLamports: getEnvNumber('MAX_PRIORITY_FEE_MICRO_LAMPORTS', 50000),
+      priorityFeeLevel: getSettingValue(dbSettings, 'PRIORITY_FEE_LEVEL', 'medium'),
+      minPriorityFeeMicroLamports: getNumberSetting(dbSettings, 'MIN_PRIORITY_FEE_MICRO_LAMPORTS', 100),
+      maxPriorityFeeMicroLamports: getNumberSetting(dbSettings, 'MAX_PRIORITY_FEE_MICRO_LAMPORTS', 50000),
 
       // Safety Settings
-      dryRun: getEnvBoolean('DRY_RUN', false),
-      requireConfirmation: getEnvBoolean('REQUIRE_CONFIRMATION', false),
-      minSolBalance: getEnvNumber('MIN_SOL_BALANCE', 0.1),
-      rateLimitMs: getEnvNumber('RATE_LIMIT_MS', 1000),
-      incognitoMode: getEnvBoolean('INCOGNITO_MODE', false),
+      dryRun: getBooleanSetting(dbSettings, 'DRY_RUN', false),
+      requireConfirmation: getBooleanSetting(dbSettings, 'REQUIRE_CONFIRMATION', false),
+      minSolBalance: getNumberSetting(dbSettings, 'MIN_SOL_BALANCE', 0.1),
+      rateLimitMs: getNumberSetting(dbSettings, 'RATE_LIMIT_MS', 1000),
+      incognitoMode: getBooleanSetting(dbSettings, 'INCOGNITO_MODE', false),
     };
 
-    logger.info('Configuration loaded successfully');
+    const dbKeys = Object.keys(dbSettings);
+    logger.info(`Configuration loaded from database: ${dbKeys.length} settings`);
+
     return config;
   } catch (error) {
     logger.error('Failed to load configuration:', error);
@@ -204,4 +200,68 @@ export function loadConfig(): Config {
   }
 }
 
-export const config = loadConfig();
+// Global config cache (loaded once, reused throughout app lifecycle)
+let cachedConfig: Config | null = null;
+
+/**
+ * Get cached config (must call loadConfigWithDB() first)
+ * This allows synchronous access to config after initial async load
+ */
+export function getConfig(): Config {
+  if (!cachedConfig) {
+    throw new Error(
+      'Configuration not loaded yet. Call loadConfigWithDB() first (usually in main bot startup).'
+    );
+  }
+  return cachedConfig;
+}
+
+/**
+ * Load configuration from database and cache it
+ * This should be called once at bot startup
+ */
+export async function loadAndCacheConfig(): Promise<Config> {
+  cachedConfig = await loadConfigWithDB();
+  return cachedConfig;
+}
+
+/**
+ * Refresh the cached configuration by reloading from database
+ * Call this after settings are updated to pick up new values immediately
+ */
+export async function refreshConfig(): Promise<Config> {
+  logger.info('Refreshing configuration from database...');
+  cachedConfig = await loadConfigWithDB();
+  logger.info('Configuration refreshed successfully');
+  return cachedConfig;
+}
+
+/**
+ * Backward compatible synchronous config loader
+ * @deprecated Use getConfig() after calling loadConfigWithDB() once
+ * @throws Error - synchronous loading is no longer supported
+ */
+export function loadConfig(): Config {
+  throw new Error(
+    'Synchronous config loading is no longer supported. ' +
+    'Call loadConfigWithDB() once at startup, then use getConfig() to access config.'
+  );
+}
+
+/**
+ * Export cached config for backward compatibility
+ * @deprecated Import getConfig() and call it instead of using this export
+ */
+export const config = new Proxy({} as Config, {
+  get(_target, prop) {
+    // Lazy load on first access
+    if (!cachedConfig) {
+      throw new Error(
+        '⚠️  Configuration not loaded yet. ' +
+        'Call loadConfigWithDB() at bot startup before accessing config. ' +
+        'Note: .env files are no longer used - all config is in the database.'
+      );
+    }
+    return cachedConfig[prop as keyof Config];
+  }
+});

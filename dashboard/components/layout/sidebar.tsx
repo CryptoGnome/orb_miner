@@ -12,6 +12,7 @@ import {
   Activity,
   Receipt,
   BarChart3,
+  Settings,
   Zap,
   Pause,
   Play,
@@ -27,6 +28,7 @@ const navigation = [
   { name: 'Performance', href: '/performance', icon: Activity },
   { name: 'Transactions', href: '/transactions', icon: Receipt },
   { name: 'Analytics', href: '/analytics', icon: BarChart3 },
+  { name: 'Settings', href: '/settings', icon: Settings },
 ];
 
 async function fetchStatus() {
@@ -93,6 +95,7 @@ export function Sidebar() {
                   ? 'bg-primary/20 text-primary neon-border'
                   : 'text-muted-foreground hover:bg-accent hover:text-primary'
               )}
+              suppressHydrationWarning
             >
               <item.icon className="h-5 w-5" />
               {item.name}
@@ -215,6 +218,7 @@ export function Sidebar() {
           target="_blank"
           rel="noopener noreferrer"
           className="flex items-center justify-center gap-2 rounded-lg bg-accent/50 p-3 text-sm text-muted-foreground transition-all hover:bg-accent hover:text-primary"
+          suppressHydrationWarning
         >
           <Github className="h-4 w-4" />
           <span className="text-xs font-medium">View on GitHub</span>

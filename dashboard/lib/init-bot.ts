@@ -1,11 +1,7 @@
-// Load environment variables from parent directory BEFORE importing bot modules
-import { config as dotenvConfig } from 'dotenv';
-import path from 'path';
-
-// Load .env from parent directory
-dotenvConfig({ path: path.join(process.cwd(), '..', '.env') });
-
-// Now import and initialize database
+/**
+ * Initialize bot utilities for dashboard API routes
+ * Configuration is loaded from SQLite database (no .env needed)
+ */
 import { initializeDatabase } from '@bot/utils/database';
 
 let isInitialized = false;

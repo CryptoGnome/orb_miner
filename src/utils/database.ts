@@ -116,6 +116,16 @@ async function createTables(): Promise<void> {
       created_at INTEGER DEFAULT (strftime('%s', 'now'))
     )`,
 
+    // Settings table - runtime configurable settings
+    `CREATE TABLE IF NOT EXISTS settings (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      key TEXT UNIQUE NOT NULL,
+      value TEXT NOT NULL,
+      type TEXT NOT NULL,
+      description TEXT,
+      updated_at INTEGER DEFAULT (strftime('%s', 'now'))
+    )`,
+
     // Indexes for faster queries
     `CREATE INDEX IF NOT EXISTS idx_transactions_timestamp ON transactions(timestamp)`,
     `CREATE INDEX IF NOT EXISTS idx_transactions_type ON transactions(type)`,
@@ -124,6 +134,7 @@ async function createTables(): Promise<void> {
     `CREATE INDEX IF NOT EXISTS idx_prices_timestamp ON prices(timestamp)`,
     `CREATE INDEX IF NOT EXISTS idx_in_flight_resolved ON in_flight_deployments(resolved)`,
     `CREATE INDEX IF NOT EXISTS idx_motherload_timestamp ON motherload_history(timestamp)`,
+    `CREATE INDEX IF NOT EXISTS idx_settings_key ON settings(key)`,
   ];
 
   for (const sql of tables) {
