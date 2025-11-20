@@ -5,7 +5,7 @@ import { getConnection } from './solana';
 import { getWallet } from './wallet';
 import logger from './logger';
 import { JupiterQuote, JupiterSwapResponse } from '../types';
-import { retry } from './retry';
+import { retry, sleep } from './retry';
 import { estimatePriorityFee, parseFeeLevel, COMPUTE_UNIT_LIMITS } from './feeEstimation';
 
 const WSOL_MINT = 'So11111111111111111111111111111111111111112'; // Wrapped SOL
@@ -23,115 +23,197 @@ let workingEndpoint: string | null = null;
 // Get price of ORB in SOL by using quote endpoint
 // The lite-api doesn't have a /price endpoint, so we derive price from a small quote
 export async function getOrbPrice(): Promise<{ priceInSol: number; priceInUsd: number }> {
+  // Check cache first
+  const cached = getCachedOrbPrice();
+  if (cached !== null) return cached;
+
   try {
-    // Request a quote for 1 ORB to SOL to get the current price
-    const oneOrbInLamports = 1e9; // 1 ORB = 1,000,000,000 lamports
+    // Use retry wrapper for robustness against temporary failures
+    const result = await retry(
+      async () => {
+        // Request a quote for 1 ORB to SOL to get the current price
+        const oneOrbInLamports = 1e9; // 1 ORB = 1,000,000,000 lamports
 
-    const params = {
-      inputMint: config.orbTokenMint.toBase58(),
-      outputMint: WSOL_MINT,
-      amount: oneOrbInLamports.toString(),
-      slippageBps: '50',
-      onlyDirectRoutes: 'false',
-      asLegacyTransaction: 'false',
+        const params = {
+          inputMint: config.orbTokenMint.toBase58(),
+          outputMint: WSOL_MINT,
+          amount: oneOrbInLamports.toString(),
+          slippageBps: '50',
+          onlyDirectRoutes: 'false',
+          asLegacyTransaction: 'false',
+        };
+
+        // Try to get quote from working endpoint
+        let quote = null;
+
+        // Try working endpoint first
+        if (workingEndpoint) {
+          quote = await tryGetQuote(workingEndpoint, params);
+          if (quote) {
+            logger.debug(`Using cached working endpoint: ${workingEndpoint}`);
+          }
+        }
+
+        // Try primary endpoint if working endpoint failed
+        if (!quote) {
+          if (workingEndpoint) {
+            logger.debug('Cached endpoint failed, trying primary endpoint');
+            await sleep(500); // Small delay to avoid rate limiting
+          }
+          quote = await tryGetQuote(config.jupiterApiUrl, params);
+        }
+
+        // Try fallback endpoints with delays between attempts
+        if (!quote) {
+          logger.debug('Primary endpoint failed, trying fallbacks...');
+          for (const fallbackUrl of FALLBACK_ENDPOINTS) {
+            if (fallbackUrl === config.jupiterApiUrl) continue;
+
+            await sleep(500); // Delay between endpoint attempts to avoid rate limiting
+            quote = await tryGetQuote(fallbackUrl, params);
+            if (quote) break;
+          }
+        }
+
+        if (!quote || !quote.outAmount) {
+          throw new Error('Failed to get ORB price quote from all endpoints');
+        }
+
+        // Calculate price: (output SOL in lamports) / (input ORB in lamports)
+        // This gives us SOL per ORB
+        const priceInSol = Number(quote.outAmount) / oneOrbInLamports;
+
+        // Get SOL price in USD to calculate ORB price in USD
+        const solPriceUsd = await getSolPriceInUsd();
+        const priceInUsd = priceInSol * solPriceUsd;
+
+        logger.debug(`ORB Price: ${priceInSol.toFixed(8)} SOL (~$${priceInUsd.toFixed(2)} USD) (from quote: 1 ORB → ${(Number(quote.outAmount) / 1e9).toFixed(8)} SOL)`);
+
+        return {
+          priceInSol,
+          priceInUsd,
+        };
+      },
+      {
+        maxRetries: 3,
+        initialDelayMs: 2000,
+        maxDelayMs: 10000,
+        exponentialBase: 2,
+      },
+      'ORB Price Fetch'
+    );
+
+    // Cache the result
+    priceCache.orbPrice = {
+      priceInSol: result.priceInSol,
+      priceInUsd: result.priceInUsd,
+      timestamp: Date.now()
     };
 
-    // Try to get quote from working endpoint
-    let quote = null;
-
-    // Try working endpoint first
-    if (workingEndpoint) {
-      quote = await tryGetQuote(workingEndpoint, params);
-    }
-
-    // Try primary endpoint if working endpoint failed
-    if (!quote) {
-      quote = await tryGetQuote(config.jupiterApiUrl, params);
-    }
-
-    // Try fallback endpoints
-    if (!quote) {
-      for (const fallbackUrl of FALLBACK_ENDPOINTS) {
-        if (fallbackUrl === config.jupiterApiUrl) continue;
-        quote = await tryGetQuote(fallbackUrl, params);
-        if (quote) break;
-      }
-    }
-
-    if (!quote || !quote.outAmount) {
-      throw new Error('Failed to get ORB price quote from all endpoints');
-    }
-
-    // Calculate price: (output SOL in lamports) / (input ORB in lamports)
-    // This gives us SOL per ORB
-    const priceInSol = Number(quote.outAmount) / oneOrbInLamports;
-
-    // Get SOL price in USD to calculate ORB price in USD
-    const solPriceUsd = await getSolPriceInUsd();
-    const priceInUsd = priceInSol * solPriceUsd;
-
-    logger.debug(`ORB Price: ${priceInSol.toFixed(8)} SOL (~$${priceInUsd.toFixed(2)} USD) (from quote: 1 ORB → ${(Number(quote.outAmount) / 1e9).toFixed(8)} SOL)`);
-
-    return {
-      priceInSol,
-      priceInUsd,
-    };
+    return result;
   } catch (error) {
-    logger.error('Failed to fetch ORB price:', error);
+    logger.error('Failed to fetch ORB price after all retries:', error);
     return { priceInSol: 0, priceInUsd: 0 };
   }
 }
 
+// Price cache to reduce API calls (especially for dashboard)
+interface PriceCache {
+  orbPrice?: { priceInSol: number; priceInUsd: number; timestamp: number };
+  solPrice?: { priceInUsd: number; timestamp: number };
+}
+
+const priceCache: PriceCache = {};
+const PRICE_CACHE_DURATION_MS = 2 * 60 * 1000; // 2 minutes cache
+
+// Get cached price if available and not expired
+function getCachedOrbPrice(): { priceInSol: number; priceInUsd: number } | null {
+  if (priceCache.orbPrice && Date.now() - priceCache.orbPrice.timestamp < PRICE_CACHE_DURATION_MS) {
+    logger.debug(`Using cached ORB price (age: ${Math.floor((Date.now() - priceCache.orbPrice.timestamp) / 1000)}s)`);
+    return { priceInSol: priceCache.orbPrice.priceInSol, priceInUsd: priceCache.orbPrice.priceInUsd };
+  }
+  return null;
+}
+
+function getCachedSolPrice(): number | null {
+  if (priceCache.solPrice && Date.now() - priceCache.solPrice.timestamp < PRICE_CACHE_DURATION_MS) {
+    logger.debug(`Using cached SOL price (age: ${Math.floor((Date.now() - priceCache.solPrice.timestamp) / 1000)}s)`);
+    return priceCache.solPrice.priceInUsd;
+  }
+  return null;
+}
+
 // Get price of SOL in USD (via USDC)
 export async function getSolPriceInUsd(): Promise<number> {
+  // Check cache first
+  const cached = getCachedSolPrice();
+  if (cached !== null) return cached;
+
   try {
-    // Request a quote for 1 SOL to USDC to get the current price
-    const oneSolInLamports = 1e9; // 1 SOL = 1,000,000,000 lamports
+    return await retry(
+      async () => {
+        // Request a quote for 1 SOL to USDC to get the current price
+        const oneSolInLamports = 1e9; // 1 SOL = 1,000,000,000 lamports
 
-    const params = {
-      inputMint: WSOL_MINT,
-      outputMint: USDC_MINT,
-      amount: oneSolInLamports.toString(),
-      slippageBps: '50',
-      onlyDirectRoutes: 'false',
-      asLegacyTransaction: 'false',
-    };
+        const params = {
+          inputMint: WSOL_MINT,
+          outputMint: USDC_MINT,
+          amount: oneSolInLamports.toString(),
+          slippageBps: '50',
+          onlyDirectRoutes: 'false',
+          asLegacyTransaction: 'false',
+        };
 
-    // Try to get quote
-    let quote = null;
+        // Try to get quote
+        let quote = null;
 
-    // Try working endpoint first
-    if (workingEndpoint) {
-      quote = await tryGetQuote(workingEndpoint, params);
-    }
+        // Try working endpoint first
+        if (workingEndpoint) {
+          quote = await tryGetQuote(workingEndpoint, params);
+        }
 
-    // Try primary endpoint if working endpoint failed
-    if (!quote) {
-      quote = await tryGetQuote(config.jupiterApiUrl, params);
-    }
+        // Try primary endpoint if working endpoint failed
+        if (!quote) {
+          if (workingEndpoint) {
+            await sleep(500); // Small delay to avoid rate limiting
+          }
+          quote = await tryGetQuote(config.jupiterApiUrl, params);
+        }
 
-    // Try fallback endpoints
-    if (!quote) {
-      for (const fallbackUrl of FALLBACK_ENDPOINTS) {
-        if (fallbackUrl === config.jupiterApiUrl) continue;
-        quote = await tryGetQuote(fallbackUrl, params);
-        if (quote) break;
-      }
-    }
+        // Try fallback endpoints with delays
+        if (!quote) {
+          for (const fallbackUrl of FALLBACK_ENDPOINTS) {
+            if (fallbackUrl === config.jupiterApiUrl) continue;
+            await sleep(500); // Delay between endpoint attempts
+            quote = await tryGetQuote(fallbackUrl, params);
+            if (quote) break;
+          }
+        }
 
-    if (!quote || !quote.outAmount) {
-      logger.warn('Failed to get SOL/USD price, using 0');
-      return 0;
-    }
+        if (!quote || !quote.outAmount) {
+          throw new Error('Failed to get SOL/USD price quote from all endpoints');
+        }
 
-    // USDC has 6 decimals, so divide by 1e6
-    const priceInUsd = Number(quote.outAmount) / 1e6;
+        // USDC has 6 decimals, so divide by 1e6
+        const priceInUsd = Number(quote.outAmount) / 1e6;
 
-    logger.debug(`SOL Price: $${priceInUsd.toFixed(2)} USD (from quote: 1 SOL → ${priceInUsd.toFixed(2)} USDC)`);
+        logger.debug(`SOL Price: $${priceInUsd.toFixed(2)} USD (from quote: 1 SOL → ${priceInUsd.toFixed(2)} USDC)`);
 
-    return priceInUsd;
+        // Cache the result
+        priceCache.solPrice = { priceInUsd, timestamp: Date.now() };
+
+        return priceInUsd;
+      },
+      {
+        maxRetries: 3,
+        initialDelayMs: 2000,
+        maxDelayMs: 10000,
+        exponentialBase: 2,
+      },
+      'SOL Price Fetch'
+    );
   } catch (error) {
-    logger.error('Failed to fetch SOL/USD price:', error);
+    logger.error('Failed to fetch SOL/USD price after all retries:', error);
     return 0;
   }
 }
@@ -145,9 +227,10 @@ async function tryGetQuote(
     const quoteUrl = `${endpoint}/quote`;
     const response = await axios.get(quoteUrl, {
       params,
-      timeout: 15000,
+      timeout: 20000, // Increased from 15s to 20s for better reliability
       headers: {
         'Accept': 'application/json',
+        'User-Agent': 'ORB-Mining-Bot/1.0', // Identify as bot to avoid rate limiting
       },
     });
 
@@ -161,7 +244,20 @@ async function tryGetQuote(
     }
     return null;
   } catch (error: any) {
-    logger.debug(`Endpoint ${endpoint} failed: ${error.code || error.message}`);
+    // Log more detailed error info for debugging
+    const errorMsg = error.response?.status
+      ? `HTTP ${error.response.status}: ${error.response.statusText}`
+      : error.code || error.message;
+    logger.debug(`Endpoint ${endpoint} failed: ${errorMsg}`);
+
+    // If we get rate limited (429), clear the cached working endpoint
+    if (error.response?.status === 429) {
+      logger.warn(`Rate limited by ${endpoint} - will try other endpoints`);
+      if (workingEndpoint === endpoint) {
+        workingEndpoint = null;
+      }
+    }
+
     return null;
   }
 }
