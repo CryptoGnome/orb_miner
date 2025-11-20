@@ -2,7 +2,25 @@ import readline from 'readline';
 import { Keypair } from '@solana/web3.js';
 import bs58 from 'bs58';
 import { saveSetting } from './settingsLoader';
+import { getQuery } from './database';
 import logger, { ui } from './logger';
+
+/**
+ * Get the dashboard port from database configuration
+ * Returns 3888 as default if not configured
+ */
+async function getDashboardPort(): Promise<string> {
+  try {
+    const portRow = await getQuery<{ value: string }>(
+      'SELECT value FROM settings WHERE key = ?',
+      ['DASHBOARD_PORT']
+    );
+    return portRow?.value || '3888';
+  } catch (error) {
+    // If database query fails, return default
+    return '3888';
+  }
+}
 
 /**
  * Interactive first-run setup wizard
@@ -46,7 +64,10 @@ export async function runSetupWizard(): Promise<boolean> {
     ui.blank();
     ui.header('✅ SETUP COMPLETE!');
     ui.info('Your bot is now configured and ready to run.');
-    ui.info('You can change settings anytime via the dashboard at http://localhost:3000/settings');
+
+    // Get dashboard port for settings URL
+    const port = await getDashboardPort();
+    ui.info(`You can change settings anytime via the dashboard at http://localhost:${port}/settings`);
     ui.blank();
 
     return true;

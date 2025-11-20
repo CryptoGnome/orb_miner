@@ -39,6 +39,7 @@ import {
   getBaselineBalance,
   setBaselineBalance,
   recordMotherload,
+  getQuery,
 } from '../utils/database';
 import {
   getCompletePnLSummary,
@@ -100,6 +101,23 @@ function setupSignalHandlers() {
 
   process.once('SIGINT', shutdownHandler);
   process.once('SIGTERM', shutdownHandler);
+}
+
+/**
+ * Get the dashboard port from database configuration
+ * Returns 3888 as default if not configured
+ */
+async function getDashboardPort(): Promise<string> {
+  try {
+    const portRow = await getQuery<{ value: string }>(
+      'SELECT value FROM settings WHERE key = ?',
+      ['DASHBOARD_PORT']
+    );
+    return portRow?.value || '3888';
+  } catch (error) {
+    // If database query fails, return default
+    return '3888';
+  }
 }
 
 /**
@@ -1356,8 +1374,11 @@ export async function smartBotCommand(): Promise<void> {
       ui.blank();
       ui.info('Opening setup wizard in your browser...');
 
+      // Get dashboard port from configuration
+      const port = await getDashboardPort();
+      const setupUrl = `http://localhost:${port}/setup`;
+
       // Open browser automatically (cross-platform) and wait for it
-      const setupUrl = 'http://localhost:3000/setup';
       const openCommand = process.platform === 'win32'
         ? `start ${setupUrl}`
         : process.platform === 'darwin'
@@ -1368,7 +1389,7 @@ export async function smartBotCommand(): Promise<void> {
         exec(openCommand, (error) => {
           if (error) {
             ui.warning('Could not open browser automatically');
-            ui.info('Please manually open: http://localhost:3000/setup');
+            ui.info(`Please manually open: ${setupUrl}`);
           } else {
             ui.success('✓ Browser opened to setup page');
           }
@@ -1385,7 +1406,7 @@ export async function smartBotCommand(): Promise<void> {
       ui.warning('Once setup is complete, restart the bot with: npm run start:bot');
       ui.blank();
 
-      throw new Error('Setup required - visit http://localhost:3000/setup');
+      throw new Error(`Setup required - visit ${setupUrl}`);
     }
 
     ui.success('Configuration loaded successfully');
