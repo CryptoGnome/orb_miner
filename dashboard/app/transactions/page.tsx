@@ -74,7 +74,7 @@ export default function Transactions() {
                 </TableHeader>
                 <TableBody>
                   {transactions.map((tx: any) => (
-                    <TableRow key={tx.signature || tx.timestamp}>
+                    <TableRow key={tx.id}>
                       <TableCell>
                         <Badge variant="outline" className={getTypeBadgeColor(tx.type)}>
                           {tx.type.replace('_', ' ')}
