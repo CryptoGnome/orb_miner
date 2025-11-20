@@ -11,7 +11,7 @@ import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Settings, TrendingUp, Zap, RefreshCw, DollarSign, Shield, Globe } from 'lucide-react';
 import { toast } from 'sonner';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 
 async function fetchSettings() {
   const res = await fetch('/api/settings');
@@ -70,6 +70,8 @@ const CATEGORY_CONFIG = {
 export default function SettingsPage() {
   const queryClient = useQueryClient();
   const [localValues, setLocalValues] = useState<Record<string, any>>({});
+  const [pendingUpdates, setPendingUpdates] = useState<Record<string, any>>({});
+  const debounceTimers = useRef<Record<string, NodeJS.Timeout>>({});
 
   const { data, isLoading } = useQuery({
     queryKey: ['settings'],
@@ -92,31 +94,82 @@ export default function SettingsPage() {
     },
   });
 
-  // Initialize local values when data loads
+  // Initialize local values when data loads (but don't overwrite pending updates)
   useEffect(() => {
     if (data?.settings) {
-      const values: Record<string, any> = {};
-      Object.keys(data.settings).forEach((key) => {
-        values[key] = data.settings[key].value;
+      setLocalValues((prevValues) => {
+        const values: Record<string, any> = {};
+        Object.keys(data.settings).forEach((key) => {
+          // Don't overwrite values that are pending save
+          if (pendingUpdates[key] === undefined) {
+            values[key] = data.settings[key].value;
+          } else {
+            values[key] = prevValues[key]; // Keep the pending value
+          }
+        });
+        return values;
       });
-      setLocalValues(values);
     }
-  }, [data]);
+  }, [data, pendingUpdates]);
+
+  const debouncedSave = useCallback((key: string, value: any) => {
+    // Clear existing timer for this key
+    if (debounceTimers.current[key]) {
+      clearTimeout(debounceTimers.current[key]);
+    }
+
+    // Mark as pending update
+    setPendingUpdates((prev) => ({ ...prev, [key]: value }));
+
+    // Set new timer to save after 800ms of no changes
+    debounceTimers.current[key] = setTimeout(() => {
+      // Only save if value actually changed
+      if (value !== data?.settings[key]?.value) {
+        mutation.mutate(
+          { key, value },
+          {
+            onSuccess: () => {
+              // Clear pending status on success
+              setPendingUpdates((prev) => {
+                const newPending = { ...prev };
+                delete newPending[key];
+                return newPending;
+              });
+            },
+            onError: () => {
+              // Clear pending status on error
+              setPendingUpdates((prev) => {
+                const newPending = { ...prev };
+                delete newPending[key];
+                return newPending;
+              });
+            },
+          }
+        );
+      } else {
+        // Value unchanged, clear pending
+        setPendingUpdates((prev) => {
+          const newPending = { ...prev };
+          delete newPending[key];
+          return newPending;
+        });
+      }
+      delete debounceTimers.current[key];
+    }, 800);
+  }, [data, mutation]);
 
   const handleSettingChange = (key: string, value: any) => {
     // Update local state immediately for responsive UI
     setLocalValues((prev) => ({ ...prev, [key]: value }));
 
-    // Debounce API call for number inputs (will be called on blur)
     const setting = data?.settings[key];
-    if (setting?.type !== 'number') {
-      mutation.mutate({ key, value });
-    }
-  };
-
-  const handleNumberBlur = (key: string) => {
-    const value = localValues[key];
-    if (value !== data?.settings[key]?.value) {
+    if (setting?.type === 'number') {
+      // Validate number - don't save NaN
+      if (!isNaN(value)) {
+        debouncedSave(key, value);
+      }
+    } else {
+      // Save immediately for non-number types
       mutation.mutate({ key, value });
     }
   };
@@ -219,19 +272,25 @@ export default function SettingsPage() {
                             )}
 
                             {setting.type === 'number' && (
-                              <Input
-                                id={setting.key}
-                                type="number"
-                                value={localValues[setting.key] ?? setting.value}
-                                onChange={(e) =>
-                                  handleSettingChange(setting.key, parseFloat(e.target.value))
-                                }
-                                onBlur={() => handleNumberBlur(setting.key)}
-                                min={setting.min}
-                                max={setting.max}
-                                step={setting.step}
-                                className="w-full"
-                              />
+                              <div className="relative">
+                                <Input
+                                  id={setting.key}
+                                  type="number"
+                                  value={localValues[setting.key] ?? setting.value}
+                                  onChange={(e) =>
+                                    handleSettingChange(setting.key, parseFloat(e.target.value))
+                                  }
+                                  min={setting.min}
+                                  max={setting.max}
+                                  step={setting.step}
+                                  className="w-full"
+                                />
+                                {pendingUpdates[setting.key] !== undefined && (
+                                  <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-yellow-500">
+                                    Saving...
+                                  </span>
+                                )}
+                              </div>
                             )}
 
                             {setting.type === 'text' && (

@@ -166,7 +166,7 @@ export async function initializeDefaultSettings(): Promise<void> {
       { key: 'ENABLE_JUPITER_SWAP', value: 'true', type: 'boolean', description: 'Enable Jupiter swap' },
       { key: 'AUTO_SWAP_WHEN_LOW_SOL', value: 'true', type: 'boolean', description: 'Auto-swap when low SOL' },
       { key: 'SWAP_ORB_AMOUNT', value: '10', type: 'number', description: 'ORB amount to swap' },
-      { key: 'MIN_ORB_TO_KEEP', value: '5', type: 'number', description: 'Minimum ORB to keep' },
+      { key: 'MIN_ORB_TO_KEEP', value: '0', type: 'number', description: 'Minimum ORB to keep' },
       { key: 'MIN_ORB_SWAP_AMOUNT', value: '0.1', type: 'number', description: 'Minimum ORB swap amount' },
       { key: 'SLIPPAGE_BPS', value: '50', type: 'number', description: 'Slippage tolerance (bps)' },
       { key: 'SWAP_PRIORITY_FEE_LAMPORTS', value: '100000', type: 'string', description: 'Swap priority fee (auto or number)' },

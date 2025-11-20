@@ -171,7 +171,7 @@ export async function loadConfigWithDB(): Promise<Config> {
       enableJupiterSwap: getBooleanSetting(dbSettings, 'ENABLE_JUPITER_SWAP', true),
       autoSwapWhenLowSol: getBooleanSetting(dbSettings, 'AUTO_SWAP_WHEN_LOW_SOL', true),
       swapOrbAmount: getNumberSetting(dbSettings, 'SWAP_ORB_AMOUNT', 10),
-      minOrbToKeep: getNumberSetting(dbSettings, 'MIN_ORB_TO_KEEP', 5),
+      minOrbToKeep: getNumberSetting(dbSettings, 'MIN_ORB_TO_KEEP', 0),
       minOrbSwapAmount: getNumberSetting(dbSettings, 'MIN_ORB_SWAP_AMOUNT', 0.1),
       slippageBps: getNumberSetting(dbSettings, 'SLIPPAGE_BPS', 50),
       swapPriorityFeeLamports: getPriorityFee('SWAP_PRIORITY_FEE_LAMPORTS', 100000),
