@@ -120,6 +120,20 @@ export async function GET() {
         balance: automationBalance,
         motherloadThreshold: config.motherloadThreshold,
       },
+
+      // Bot status - determine if bot is mining, waiting, or idle
+      botStatus: (() => {
+        if (automationBalance === 0) return 'idle';
+
+        const currentMotherlode = treasury ? Number(treasury.motherlode) / 1e9 : 0;
+        const isAboveThreshold = currentMotherlode >= config.motherloadThreshold;
+
+        // Bot is waiting if automation is active but motherload is below threshold
+        if (!isAboveThreshold) return 'waiting';
+
+        // If above threshold and automation is active, assume mining
+        return 'mining';
+      })(),
     };
 
     return NextResponse.json(status);

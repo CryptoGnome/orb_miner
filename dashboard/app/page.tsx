@@ -134,130 +134,141 @@ export default function Home() {
       <div className="space-y-4">
         {/* Profit & Loss Hero */}
         <Card className="border-primary/50 neon-border overflow-hidden">
-          <CardContent className="p-0">
-            {/* Chart Header - Full Width */}
-            {chartData.length > 0 && (
-              <div className="relative bg-gradient-to-b from-black/40 to-transparent">
-                {/* Time Range Selector */}
-                <div className="absolute top-2 right-4 z-10 flex gap-1">
-                  {(['1d', '7d', '1m', 'all'] as TimeRange[]).map((range) => (
-                    <button
-                      key={range}
-                      onClick={() => setTimeRange(range)}
-                      className={cn(
-                        "px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider rounded transition-all",
-                        timeRange === range
-                          ? "bg-primary/30 text-primary border border-primary/50"
-                          : "bg-black/40 text-muted-foreground/60 border border-transparent hover:bg-black/60 hover:text-muted-foreground"
-                      )}
-                    >
-                      {range}
-                    </button>
-                  ))}
+          <CardContent className="px-6 py-6">
+            <div className="flex items-start justify-between gap-8 mb-6">
+              {/* Profit Display */}
+              <div className="flex-shrink-0">
+                <div className="flex items-center gap-3 mb-2">
+                  <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Net Profit</h3>
+                  <Badge variant="outline" className={cn(
+                    "text-xs font-bold",
+                    isProfit ? "bg-green-500/20 text-green-500 border-green-500/50" : "bg-red-500/20 text-red-500 border-red-500/50"
+                  )}>
+                    {isProfit ? '+' : ''}{roi.toFixed(2)}%
+                  </Badge>
                 </div>
+                <div className="flex items-baseline gap-3 mb-3">
+                  <span className={cn(
+                    "text-6xl font-black tracking-tight",
+                    isProfit ? "text-green-500 neon-text" : "text-red-500"
+                  )}>
+                    {isProfit ? '+' : ''}{netPnL.toFixed(4)}
+                  </span>
+                  <span className="text-3xl font-bold text-muted-foreground/60">SOL</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Badge variant="outline" className="bg-blue-500/10 text-blue-400 border-blue-500/30 font-mono text-[10px] px-2 py-0.5">
+                    START: {(pnl?.truePnL?.startingBalance || 0).toFixed(4)}
+                  </Badge>
+                  <svg className="w-3 h-3 text-muted-foreground/60" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
+                  </svg>
+                  <Badge variant="outline" className={cn(
+                    "font-mono text-[10px] px-2 py-0.5",
+                    isProfit
+                      ? "bg-green-500/10 text-green-400 border-green-500/30"
+                      : "bg-red-500/10 text-red-400 border-red-500/30"
+                  )}>
+                    NOW: {(pnl?.truePnL?.currentBalance || 0).toFixed(4)}
+                  </Badge>
+                </div>
+              </div>
 
-                <ResponsiveContainer width="100%" height={100}>
-                  <LineChart data={chartData}>
-                    <defs>
-                      <linearGradient id="colorGradient" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor={isProfit ? '#22c55e' : '#ef4444'} stopOpacity={0.4}/>
-                        <stop offset="95%" stopColor={isProfit ? '#22c55e' : '#ef4444'} stopOpacity={0}/>
-                      </linearGradient>
-                    </defs>
-                    <XAxis dataKey="time" hide />
-                    <YAxis
-                      domain={getYAxisDomain()}
-                      hide
-                    />
-                    {baseline > 0 && (
-                      <ReferenceLine
-                        y={baseline}
-                        stroke="#555"
-                        strokeDasharray="3 3"
-                        strokeWidth={1}
-                        strokeOpacity={0.6}
+              {/* Chart - Center */}
+              {chartData.length > 0 && (
+                <div className="flex-1 relative">
+                  {/* Time Range Selector */}
+                  <div className="absolute -top-2 right-0 z-10 flex gap-1">
+                    {(['1d', '7d', '1m', 'all'] as TimeRange[]).map((range) => (
+                      <button
+                        key={range}
+                        onClick={() => setTimeRange(range)}
+                        className={cn(
+                          "px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider rounded transition-all",
+                          timeRange === range
+                            ? "bg-primary/30 text-primary border border-primary/50"
+                            : "bg-black/40 text-muted-foreground/60 border border-transparent hover:bg-black/60 hover:text-muted-foreground"
+                        )}
+                      >
+                        {range}
+                      </button>
+                    ))}
+                  </div>
+
+                  <ResponsiveContainer width="100%" height={140}>
+                    <LineChart data={chartData}>
+                      <defs>
+                        <linearGradient id="colorGradient" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor={isProfit ? '#22c55e' : '#ef4444'} stopOpacity={0.4}/>
+                          <stop offset="95%" stopColor={isProfit ? '#22c55e' : '#ef4444'} stopOpacity={0}/>
+                        </linearGradient>
+                      </defs>
+                      <XAxis dataKey="time" hide />
+                      <YAxis
+                        domain={getYAxisDomain()}
+                        hide
                       />
-                    )}
-                    <Tooltip
-                      contentStyle={{
-                        backgroundColor: '#0a0a0a',
-                        border: '1px solid #333',
-                        borderRadius: '4px',
-                        fontSize: 10,
-                        padding: '4px 8px'
-                      }}
-                      labelStyle={{ color: '#888', fontSize: 9 }}
-                      formatter={(value: any) => [`${Number(value).toFixed(4)} SOL`, '']}
-                    />
-                    <Line
-                      type="monotone"
-                      dataKey="sol"
-                      stroke={isProfit ? '#22c55e' : '#ef4444'}
-                      strokeWidth={2.5}
-                      dot={false}
-                      fill="url(#colorGradient)"
-                      animationDuration={500}
-                    />
-                  </LineChart>
-                </ResponsiveContainer>
+                      {baseline > 0 && (
+                        <ReferenceLine
+                          y={baseline}
+                          stroke="#555"
+                          strokeDasharray="3 3"
+                          strokeWidth={1}
+                          strokeOpacity={0.6}
+                        />
+                      )}
+                      <Tooltip
+                        contentStyle={{
+                          backgroundColor: '#0a0a0a',
+                          border: '1px solid #333',
+                          borderRadius: '4px',
+                          fontSize: 10,
+                          padding: '4px 8px'
+                        }}
+                        labelStyle={{ color: '#888', fontSize: 9 }}
+                        formatter={(value: any) => [`${Number(value).toFixed(4)} SOL`, '']}
+                      />
+                      <Line
+                        type="monotone"
+                        dataKey="sol"
+                        stroke={isProfit ? '#22c55e' : '#ef4444'}
+                        strokeWidth={2.5}
+                        dot={false}
+                        fill="url(#colorGradient)"
+                        animationDuration={500}
+                      />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+              )}
+
+              {/* Mining Animation - Right */}
+              <div className="flex-shrink-0">
+                <MiningAnimation
+                  isActive={status?.automation?.isActive || false}
+                  status={(status?.botStatus as 'mining' | 'waiting' | 'idle') || 'idle'}
+                />
               </div>
-            )}
+            </div>
 
-            {/* Main Content */}
-            <div className="px-6 pt-4 pb-6">
-              <div className="flex items-center justify-between mb-6">
-                {/* Profit Display */}
-                <div className="flex-1">
-                  <div className="flex items-center gap-3 mb-2">
-                    <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Net Profit</h3>
-                    <Badge variant="outline" className={cn(
-                      "text-xs font-bold",
-                      isProfit ? "bg-green-500/20 text-green-500 border-green-500/50" : "bg-red-500/20 text-red-500 border-red-500/50"
-                    )}>
-                      {isProfit ? '+' : ''}{roi.toFixed(2)}%
-                    </Badge>
-                  </div>
-                  <div className="flex items-baseline gap-3 mb-1">
-                    <span className={cn(
-                      "text-6xl font-black tracking-tight",
-                      isProfit ? "text-green-500 neon-text" : "text-red-500"
-                    )}>
-                      {isProfit ? '+' : ''}{netPnL.toFixed(4)}
-                    </span>
-                    <span className="text-3xl font-bold text-muted-foreground/60">SOL</span>
-                  </div>
-                  <p className="text-xs text-muted-foreground/80">
-                    {(pnl?.truePnL?.startingBalance || 0).toFixed(4)} SOL → {(pnl?.truePnL?.currentBalance || 0).toFixed(4)} SOL
-                  </p>
-                </div>
-
-                {/* Mining Animation */}
-                <div className="flex-shrink-0">
-                  <MiningAnimation
-                    isActive={status?.automation?.isActive || false}
-                  />
-                </div>
+            {/* Metrics Grid */}
+            <div className="grid grid-cols-3 gap-4">
+              <div className="bg-gradient-to-br from-emerald-500/10 to-transparent border border-emerald-500/20 rounded-lg p-4">
+                <p className="text-[10px] text-emerald-400/80 uppercase tracking-wide mb-1.5 font-semibold">ORB Earned</p>
+                <p className="text-2xl font-black text-emerald-400 mb-0.5">{(pnl?.breakdown?.income?.orbFromMining || 0).toFixed(2)}</p>
+                <p className="text-[9px] text-muted-foreground/60">(before 10% fee)</p>
               </div>
 
-              {/* Metrics Grid */}
-              <div className="grid grid-cols-3 gap-4">
-                <div className="bg-gradient-to-br from-emerald-500/10 to-transparent border border-emerald-500/20 rounded-lg p-4">
-                  <p className="text-[10px] text-emerald-400/80 uppercase tracking-wide mb-1.5 font-semibold">ORB Earned</p>
-                  <p className="text-2xl font-black text-emerald-400 mb-0.5">{(pnl?.breakdown?.income?.orbFromMining || 0).toFixed(2)}</p>
-                  <p className="text-[9px] text-muted-foreground/60">(before 10% fee)</p>
-                </div>
+              <div className="bg-gradient-to-br from-purple-500/10 to-transparent border border-purple-500/20 rounded-lg p-4">
+                <p className="text-[10px] text-purple-400/80 uppercase tracking-wide mb-1.5 font-semibold">ORB Claimed</p>
+                <p className="text-2xl font-black text-purple-400 mb-0.5">{(pnl?.breakdown?.income?.orbSwappedCount || 0).toFixed(2)}</p>
+                <p className="text-[9px] text-muted-foreground/60">(after 10% fee)</p>
+              </div>
 
-                <div className="bg-gradient-to-br from-purple-500/10 to-transparent border border-purple-500/20 rounded-lg p-4">
-                  <p className="text-[10px] text-purple-400/80 uppercase tracking-wide mb-1.5 font-semibold">ORB Claimed</p>
-                  <p className="text-2xl font-black text-purple-400 mb-0.5">{(pnl?.breakdown?.income?.orbSwappedCount || 0).toFixed(2)}</p>
-                  <p className="text-[9px] text-muted-foreground/60">(after 10% fee)</p>
-                </div>
-
-                <div className="bg-gradient-to-br from-red-500/10 to-transparent border border-red-500/20 rounded-lg p-4">
-                  <p className="text-[10px] text-red-400/80 uppercase tracking-wide mb-1.5 font-semibold">Total Fees</p>
-                  <p className="text-2xl font-black text-red-400 mb-0.5">{(pnl?.summary?.totalExpenses || 0).toFixed(4)}</p>
-                  <p className="text-[9px] text-muted-foreground/60">SOL (all costs)</p>
-                </div>
+              <div className="bg-gradient-to-br from-red-500/10 to-transparent border border-red-500/20 rounded-lg p-4">
+                <p className="text-[10px] text-red-400/80 uppercase tracking-wide mb-1.5 font-semibold">Total Fees</p>
+                <p className="text-2xl font-black text-red-400 mb-0.5">{(pnl?.summary?.totalExpenses || 0).toFixed(4)}</p>
+                <p className="text-[9px] text-muted-foreground/60">SOL (all costs)</p>
               </div>
             </div>
           </CardContent>

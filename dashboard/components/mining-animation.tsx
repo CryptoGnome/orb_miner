@@ -5,36 +5,47 @@ import { useEffect, useState } from 'react';
 
 interface MiningAnimationProps {
   isActive: boolean;
+  status?: 'mining' | 'waiting' | 'idle';
   className?: string;
 }
 
-export function MiningAnimation({ isActive, className }: MiningAnimationProps) {
+export function MiningAnimation({ isActive, status = 'idle', className }: MiningAnimationProps) {
   const [activeSquares, setActiveSquares] = useState<Set<number>>(new Set());
   const [primarySquare, setPrimarySquare] = useState<number | null>(null);
 
   useEffect(() => {
-    if (!isActive) {
+    if (status === 'idle') {
       setActiveSquares(new Set());
       setPrimarySquare(null);
       return;
     }
 
-    // Animate squares when mining
+    // Different animation speeds based on status
+    const animationSpeed = status === 'mining' ? 400 : 800; // Slower when waiting
+
+    // Animate squares
     const interval = setInterval(() => {
       const newActive = new Set<number>();
-      // Randomly activate 3-7 squares
-      const count = Math.floor(Math.random() * 5) + 3;
+      // Fewer active squares when waiting (1-3 vs 3-7)
+      const count = status === 'mining'
+        ? Math.floor(Math.random() * 5) + 3
+        : Math.floor(Math.random() * 3) + 1;
+
       for (let i = 0; i < count; i++) {
         newActive.add(Math.floor(Math.random() * 25));
       }
       setActiveSquares(newActive);
 
-      // Set one primary highlighted square (like the blue bordered one on ore.blue)
-      setPrimarySquare(Math.floor(Math.random() * 25));
-    }, 400);
+      // Set primary square only when actually mining
+      if (status === 'mining') {
+        setPrimarySquare(Math.floor(Math.random() * 25));
+      } else {
+        setPrimarySquare(null);
+      }
+    }, animationSpeed);
 
     return () => clearInterval(interval);
-  }, [isActive]);
+  }, [status]);
 
   return (
     <div className={cn("inline-block", className)}>
@@ -47,16 +58,20 @@ export function MiningAnimation({ isActive, className }: MiningAnimationProps) {
               key={i}
               className={cn(
                 "w-4 h-4 rounded-[2px] transition-all duration-300 relative",
-                isActive
+                status === 'mining'
                   ? isPrimary
                     ? "bg-blue-500/80 border-2 border-blue-400 shadow-[0_0_12px_rgba(59,130,246,0.8)]"
                     : isActivated
-                    ? "bg-primary/60 border border-primary/80 shadow-[0_0_8px_rgba(var(--primary-rgb),0.6)]"
+                    ? "bg-green-500/60 border border-green-500/80 shadow-[0_0_8px_rgba(34,197,94,0.6)]"
                     : "bg-gray-800/40 border border-gray-700/30"
+                  : status === 'waiting'
+                  ? isActivated
+                    ? "bg-yellow-500/50 border border-yellow-500/70 shadow-[0_0_6px_rgba(234,179,8,0.5)]"
+                    : "bg-gray-800/30 border border-gray-700/30"
                   : "bg-gray-900/30 border border-gray-800/20"
               )}
             >
-              {isPrimary && isActive && (
+              {isPrimary && status === 'mining' && (
                 <div className="absolute inset-0 bg-blue-400/20 rounded-[2px] animate-pulse" />
               )}
             </div>
@@ -66,9 +81,13 @@ export function MiningAnimation({ isActive, className }: MiningAnimationProps) {
       <div className="text-center mt-2">
         <span className={cn(
           "text-[10px] font-bold tracking-wider uppercase transition-colors",
-          isActive ? "text-primary animate-pulse" : "text-muted-foreground"
+          status === 'mining' ? "text-green-500 animate-pulse" :
+          status === 'waiting' ? "text-yellow-500" :
+          "text-muted-foreground"
         )}>
-          {isActive ? "⚡ MINING" : "IDLE"}
+          {status === 'mining' ? "⚡ MINING" :
+           status === 'waiting' ? "⏳ WAITING" :
+           "IDLE"}
         </span>
       </div>
     </div>
