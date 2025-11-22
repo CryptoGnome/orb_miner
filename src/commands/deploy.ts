@@ -51,14 +51,15 @@ export async function deployCommand(): Promise<void> {
 
     // Build and send deploy instruction
     const deployIx = await buildDeployInstruction(config.solPerDeployment);
-    const signature = await sendAndConfirmTransaction([deployIx], 'Deploy');
+    const { signature, fee: actualFee } = await sendAndConfirmTransaction([deployIx], 'Deploy');
 
     logger.info(`Deployment successful!`);
     logger.info(`Transaction: ${signature}`);
+    logger.info(`Transaction Fee: ${actualFee.toFixed(6)} SOL`);
     logger.info(`Deployed: ${config.solPerDeployment} SOL to all 25 squares`);
 
     // Log to transactions file
-    logger.info(`[TRANSACTION] Deploy | ${config.solPerDeployment} SOL | ${signature}`);
+    logger.info(`[TRANSACTION] Deploy | ${config.solPerDeployment} SOL | Fee: ${actualFee.toFixed(6)} SOL | ${signature}`);
   } catch (error) {
     logger.error('Deploy command failed:', error);
     throw error;

@@ -34,14 +34,15 @@ export async function stakeCommand(amount?: number): Promise<void> {
 
     // Build and send stake instruction
     const stakeIx = buildStakeInstruction(stakeAmount);
-    const signature = await sendAndConfirmTransaction([stakeIx], 'Stake');
+    const { signature, fee: actualFee } = await sendAndConfirmTransaction([stakeIx], 'Stake');
 
     logger.info(`Stake successful!`);
     logger.info(`Transaction: ${signature}`);
+    logger.info(`Transaction Fee: ${actualFee.toFixed(6)} SOL`);
     logger.info(`Staked: ${stakeAmount.toFixed(2)} ORB`);
 
     // Log to transactions file
-    logger.info(`[TRANSACTION] Stake | ${stakeAmount.toFixed(2)} ORB | ${signature}`);
+    logger.info(`[TRANSACTION] Stake | ${stakeAmount.toFixed(2)} ORB | Fee: ${actualFee.toFixed(6)} SOL | ${signature}`);
 
     // Show updated stake info
     const wallet = getWallet();

@@ -503,7 +503,7 @@ export async function sendAndConfirmTransaction(
     computeUnitLimit?: number;    // Optional override for compute unit limit
     accounts?: PublicKey[];       // Accounts involved (for better fee estimation)
   }
-): Promise<string> {
+): Promise<{ signature: string; fee: number }> {
   const connection = getConnection();
   const wallet = getWallet();
 
@@ -598,7 +598,27 @@ export async function sendAndConfirmTransaction(
       await connection.confirmTransaction(signature, 'confirmed');
 
       logger.debug(`${context}: Transaction confirmed: ${signature}`);
-      return signature;
+
+      // Fetch actual transaction fee
+      let actualFee = 0;
+      try {
+        const txDetails = await connection.getTransaction(signature, {
+          commitment: 'confirmed',
+          maxSupportedTransactionVersion: 0,
+        });
+
+        if (txDetails && txDetails.meta) {
+          // Fee is in lamports, convert to SOL
+          actualFee = txDetails.meta.fee / 1e9;
+          logger.debug(`${context}: Actual fee paid: ${actualFee.toFixed(6)} SOL`);
+        } else {
+          logger.warn(`${context}: Could not fetch transaction details for fee`);
+        }
+      } catch (error) {
+        logger.warn(`${context}: Failed to fetch transaction fee:`, error);
+      }
+
+      return { signature, fee: actualFee };
     },
     {
       maxRetries: config.deployMaxRetries,

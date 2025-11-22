@@ -85,14 +85,15 @@ export async function claimCommand(): Promise<void> {
     }
 
     // Send all claim instructions in a single transaction
-    const signature = await sendAndConfirmTransaction(instructions, 'Claim');
+    const { signature, fee: actualFee } = await sendAndConfirmTransaction(instructions, 'Claim');
 
     logger.info(`Claim successful!`);
     logger.info(`Transaction: ${signature}`);
+    logger.info(`Transaction Fee: ${actualFee.toFixed(6)} SOL`);
     logger.info(`Claimed: ${totalSolClaimed.toFixed(4)} SOL, ${totalOrbClaimed.toFixed(2)} ORB`);
 
     // Log to transactions file
-    logger.info(`[TRANSACTION] Claim | ${totalSolClaimed.toFixed(4)} SOL, ${totalOrbClaimed.toFixed(2)} ORB | ${signature}`);
+    logger.info(`[TRANSACTION] Claim | ${totalSolClaimed.toFixed(4)} SOL, ${totalOrbClaimed.toFixed(2)} ORB | Fee: ${actualFee.toFixed(6)} SOL | ${signature}`);
   } catch (error) {
     logger.error('Claim command failed:', error);
     throw error;

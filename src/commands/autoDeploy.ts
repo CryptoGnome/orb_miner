@@ -73,8 +73,8 @@ async function checkAndClaimRewards(): Promise<void> {
     }
 
     if (instructions.length > 0 && !config.dryRun) {
-      const signature = await sendAndConfirmTransaction(instructions, 'Auto-Claim');
-      logger.info(`Auto-claim successful: ${signature}`);
+      const { signature, fee: actualFee } = await sendAndConfirmTransaction(instructions, 'Auto-Claim');
+      logger.info(`Auto-claim successful: ${signature} (fee: ${actualFee.toFixed(6)} SOL)`);
     }
   } catch (error) {
     logger.error('Auto-claim failed:', error);
@@ -174,10 +174,10 @@ async function deployToRound(): Promise<boolean> {
     }
 
     const deployIx = await buildDeployInstruction(config.solPerDeployment);
-    const signature = await sendAndConfirmTransaction([deployIx], 'Auto-Deploy');
+    const { signature, fee: actualFee } = await sendAndConfirmTransaction([deployIx], 'Auto-Deploy');
 
     logger.info(`✅ Deployment successful: ${signature}`);
-    logger.info(`[TRANSACTION] Auto-Deploy | ${config.solPerDeployment} SOL | ${signature}`);
+    logger.info(`[TRANSACTION] Auto-Deploy | ${config.solPerDeployment} SOL | Fee: ${actualFee.toFixed(6)} SOL | ${signature}`);
 
     return true;
   } catch (error) {
