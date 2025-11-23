@@ -9,8 +9,8 @@ export const DEPLOYMENT_STRATEGY_DESCRIPTIONS: Record<string, string> = {
 Performance (220k+ simulations):
 • Average ROI: +1,554%
 • Sharpe Ratio: 7.2 (excellent risk-adjusted returns)
-• Risk of Ruin: 0%
-• Profitability: 100% of runs end positive
+• Lowest Risk Profile (simulations showed minimal drawdowns)
+• ⚠️ Past performance doesn't guarantee future results
 
 How it works:
 • Spreads budget over MORE rounds (60-1000 depending on motherload)
@@ -27,15 +27,17 @@ Best for:
 Example (1200 ORB motherload, 1 SOL budget):
 • 120 rounds planned
 • ~0.0083 SOL per round
-• Expected profit: +592% (+0.592 SOL)`,
+• Expected profit: +592% (+0.592 SOL)
+
+⚠️ RISK WARNING: Cryptocurrency mining involves significant risk. Market conditions, competition levels, and motherload values vary. Never invest more than you can afford to lose.`,
 
   balanced: `⚖️ BALANCED
 
 Performance (220k+ simulations):
 • Average ROI: +1,130%
 • Sharpe Ratio: 6.3 (very good risk-adjusted returns)
-• Risk of Ruin: 0%
-• Profitability: 100% of runs end positive
+• Moderate Risk Profile
+• ⚠️ Past performance doesn't guarantee future results
 
 How it works:
 • Moderate number of rounds (40-880 depending on motherload)
@@ -52,15 +54,17 @@ Best for:
 Example (1200 ORB motherload, 1 SOL budget):
 • 80 rounds planned
 • ~0.0125 SOL per round
-• Expected profit: +392% (+0.392 SOL)`,
+• Expected profit: +392% (+0.392 SOL)
+
+⚠️ RISK WARNING: Cryptocurrency mining involves significant risk. Market conditions, competition levels, and motherload values vary. Never invest more than you can afford to lose.`,
 
   aggressive: `⚡ AGGRESSIVE
 
 Performance (220k+ simulations):
 • Average ROI: +683%
 • Sharpe Ratio: 4.9 (good risk-adjusted returns)
-• Risk of Ruin: 0%
-• Profitability: 100% of runs end positive
+• Higher Risk Profile (larger bets, higher variance)
+• ⚠️ Past performance doesn't guarantee future results
 
 How it works:
 • Fewer rounds (25-500 depending on motherload)
@@ -77,15 +81,17 @@ Best for:
 Example (1200 ORB motherload, 1 SOL budget):
 • 50 rounds planned
 • ~0.02 SOL per round
-• Expected profit: +242% (+0.242 SOL)`,
+• Expected profit: +242% (+0.242 SOL)
+
+⚠️ RISK WARNING: Cryptocurrency mining involves significant risk. Market conditions, competition levels, and motherload values vary. Never invest more than you can afford to lose.`,
 
   kelly_optimized: `🎯 KELLY OPTIMIZED
 
 Performance (220k+ simulations):
 • Average ROI: +904%
 • Sharpe Ratio: 5.6 (excellent risk-adjusted returns)
-• Risk of Ruin: 0%
-• Profitability: 100% of runs end positive
+• Moderate-High Risk Profile
+• ⚠️ Past performance doesn't guarantee future results
 
 How it works:
 • Based on Kelly Criterion mathematics
@@ -102,7 +108,9 @@ Best for:
 Example (1200 ORB motherload, 1 SOL budget):
 • 65 rounds planned
 • ~0.0154 SOL per round
-• Expected profit: +328% (+0.328 SOL)`,
+• Expected profit: +328% (+0.328 SOL)
+
+⚠️ RISK WARNING: Cryptocurrency mining involves significant risk. Market conditions, competition levels, and motherload values vary. Never invest more than you can afford to lose.`,
 
   manual: `✏️ MANUAL (FIXED AMOUNT)
 
