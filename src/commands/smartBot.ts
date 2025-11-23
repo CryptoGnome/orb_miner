@@ -287,12 +287,29 @@ async function autoSetupAutomation(): Promise<boolean> {
     const solBalance = await getSolBalance();
     ui.status('Wallet Balance', `${solBalance.toFixed(4)} SOL`);
 
-    // Calculate usable budget
-    const usableBudget = solBalance * (config.initialAutomationBudgetPct / 100);
-    ui.status('Allocating', `${usableBudget.toFixed(4)} SOL (${config.initialAutomationBudgetPct}%)`);
+    // Calculate usable budget based on budget type
+    let usableBudget: number;
+    let budgetDescription: string;
+
+    if (config.budgetType === 'fixed') {
+      usableBudget = config.fixedBudgetAmount;
+      budgetDescription = `${usableBudget.toFixed(4)} SOL (fixed amount)`;
+
+      // Check if we have enough SOL for the fixed amount
+      if (solBalance < usableBudget) {
+        ui.error(`Insufficient balance - wallet has ${solBalance.toFixed(4)} SOL but fixed budget is ${usableBudget.toFixed(4)} SOL`);
+        return false;
+      }
+    } else {
+      // Default: percentage-based budget
+      usableBudget = solBalance * (config.initialAutomationBudgetPct / 100);
+      budgetDescription = `${usableBudget.toFixed(4)} SOL (${config.initialAutomationBudgetPct}%)`;
+    }
+
+    ui.status('Allocating', budgetDescription);
 
     if (usableBudget < 0.5) {
-      ui.error('Insufficient balance - need at least 0.56 SOL');
+      ui.error('Insufficient budget - need at least 0.5 SOL for automation');
       return false;
     }
 

@@ -239,6 +239,14 @@ export default function SettingsPage() {
 
             // Helper to check if a setting should be visible based on dependencies
             const isSettingVisible = (setting: any) => {
+              // Show INITIAL_AUTOMATION_BUDGET_PCT only when BUDGET_TYPE = 'percentage'
+              if (setting.key === 'INITIAL_AUTOMATION_BUDGET_PCT') {
+                return localValues['BUDGET_TYPE'] === 'percentage';
+              }
+              // Show FIXED_BUDGET_AMOUNT only when BUDGET_TYPE = 'fixed'
+              if (setting.key === 'FIXED_BUDGET_AMOUNT') {
+                return localValues['BUDGET_TYPE'] === 'fixed';
+              }
               // Show MANUAL_AMOUNT_PER_ROUND only when DEPLOYMENT_AMOUNT_STRATEGY = 'manual'
               if (setting.key === 'MANUAL_AMOUNT_PER_ROUND') {
                 return localValues['DEPLOYMENT_AMOUNT_STRATEGY'] === 'manual';

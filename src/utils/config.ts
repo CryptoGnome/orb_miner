@@ -34,7 +34,9 @@ export interface Config {
   estimatedCompetitionMultiplier: number;
 
   // Smart Bot - Automation Account Settings
+  budgetType: 'percentage' | 'fixed';
   initialAutomationBudgetPct: number;
+  fixedBudgetAmount: number;
 
   // Deployment Amount Strategy
   deploymentAmountStrategy: DeploymentAmountStrategy;
@@ -144,7 +146,9 @@ export async function loadConfigWithDB(): Promise<Config> {
       estimatedCompetitionMultiplier: getNumberSetting(dbSettings, 'ESTIMATED_COMPETITION_MULTIPLIER', 10),
 
       // Smart Bot - Automation Account Settings
+      budgetType: (getSettingValue(dbSettings, 'BUDGET_TYPE', 'percentage') as 'percentage' | 'fixed'),
       initialAutomationBudgetPct: getNumberSetting(dbSettings, 'INITIAL_AUTOMATION_BUDGET_PCT', 90),
+      fixedBudgetAmount: getNumberSetting(dbSettings, 'FIXED_BUDGET_AMOUNT', 1.0),
 
       // Deployment Amount Strategy
       deploymentAmountStrategy: getSettingValue(dbSettings, 'DEPLOYMENT_AMOUNT_STRATEGY', 'auto') as DeploymentAmountStrategy,

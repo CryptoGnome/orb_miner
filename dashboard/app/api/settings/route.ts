@@ -135,14 +135,37 @@ export const SETTINGS_DEFINITIONS: SettingDefinition[] = [
 
   // Automation Settings
   {
+    key: 'BUDGET_TYPE',
+    type: 'select',
+    label: 'Budget Type',
+    description: 'How to determine automation budget',
+    defaultValue: 'percentage',
+    options: [
+      { value: 'percentage', label: 'Percentage of Wallet' },
+      { value: 'fixed', label: 'Fixed SOL Amount' },
+    ],
+    category: 'automation',
+  },
+  {
     key: 'INITIAL_AUTOMATION_BUDGET_PCT',
     type: 'number',
     label: 'Automation Budget %',
-    description: 'Percentage of wallet SOL to allocate to automation',
+    description: 'Percentage of wallet SOL to allocate to automation (when budget type = percentage)',
     defaultValue: 90,
     min: 10,
     max: 99,
     step: 5,
+    category: 'automation',
+  },
+  {
+    key: 'FIXED_BUDGET_AMOUNT',
+    type: 'number',
+    label: 'Fixed Budget Amount (SOL)',
+    description: 'Fixed SOL amount to allocate to automation (when budget type = fixed)',
+    defaultValue: 1.0,
+    min: 0.1,
+    max: 100,
+    step: 0.1,
     category: 'automation',
   },
   {
