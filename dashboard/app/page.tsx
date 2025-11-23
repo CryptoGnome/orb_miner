@@ -1,16 +1,19 @@
 'use client';
 
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { DashboardLayout } from '@/components/layout/dashboard-layout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   Wallet,
   Coins,
   Zap,
   Activity,
+  Download,
 } from 'lucide-react';
+import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { LineChart, Line, XAxis, YAxis, ResponsiveContainer, ReferenceLine, Tooltip } from 'recharts';
 import { format, subDays, subMonths } from 'date-fns';
@@ -35,10 +38,20 @@ async function fetchAnalytics() {
   return res.json();
 }
 
+async function triggerClaim() {
+  const res = await fetch('/api/claim', { method: 'POST' });
+  if (!res.ok) {
+    const error = await res.json();
+    throw new Error(error.error || 'Failed to trigger claim');
+  }
+  return res.json();
+}
+
 type TimeRange = '1d' | '7d' | '1m' | 'all';
 
 export default function Home() {
   const [timeRange, setTimeRange] = useState<TimeRange>('7d');
+  const queryClient = useQueryClient();
 
   const { data: status, isLoading: statusLoading } = useQuery({
     queryKey: ['status'],
@@ -56,6 +69,22 @@ export default function Home() {
     queryKey: ['analytics'],
     queryFn: fetchAnalytics,
     refetchInterval: 60000,
+  });
+
+  const claimMutation = useMutation({
+    mutationFn: triggerClaim,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['status'] });
+      queryClient.invalidateQueries({ queryKey: ['pnl'] });
+      toast.success('Claim successful!', {
+        description: 'Your rewards have been claimed.',
+      });
+    },
+    onError: (error: any) => {
+      toast.error('Claim failed', {
+        description: error.message,
+      });
+    },
   });
 
   if (statusLoading || pnlLoading || analyticsLoading) {
@@ -466,6 +495,22 @@ export default function Home() {
                 </div>
               </TabsContent>
             </Tabs>
+
+            {/* Manual Claim Button */}
+            <div className="mt-4 pt-4 border-t">
+              <Button
+                onClick={() => claimMutation.mutate()}
+                disabled={claimMutation.isPending}
+                className="w-full"
+                variant="default"
+              >
+                <Download className="h-4 w-4 mr-2" />
+                {claimMutation.isPending ? 'Claiming...' : 'Claim Now'}
+              </Button>
+              <p className="text-xs text-muted-foreground text-center mt-2">
+                Manually trigger claim of all available rewards
+              </p>
+            </div>
           </CardContent>
         </Card>
       </div>

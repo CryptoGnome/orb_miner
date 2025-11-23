@@ -90,3 +90,6 @@ export interface ClaimOptions {
   fromMining: boolean;
   fromStaking: boolean;
 }
+
+// Re-export strategy types for convenience
+export * from './strategies';

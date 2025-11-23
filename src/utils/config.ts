@@ -7,6 +7,7 @@ import {
   getBooleanSetting,
   initializeDefaultSettings
 } from './settingsLoader';
+import { DeploymentAmountStrategy, ClaimStrategy } from '../types/strategies';
 
 export interface Config {
   // Wallet & Network
@@ -34,6 +35,15 @@ export interface Config {
 
   // Smart Bot - Automation Account Settings
   initialAutomationBudgetPct: number;
+
+  // Deployment Amount Strategy
+  deploymentAmountStrategy: DeploymentAmountStrategy;
+  manualAmountPerRound: number;
+  targetRounds: number;
+  budgetPercentagePerRound: number;
+
+  // Claim Strategy
+  claimStrategy: ClaimStrategy;
 
   // Smart Bot - Auto-Claim Thresholds
   autoClaimSolThreshold: number;
@@ -135,6 +145,15 @@ export async function loadConfigWithDB(): Promise<Config> {
 
       // Smart Bot - Automation Account Settings
       initialAutomationBudgetPct: getNumberSetting(dbSettings, 'INITIAL_AUTOMATION_BUDGET_PCT', 90),
+
+      // Deployment Amount Strategy
+      deploymentAmountStrategy: getSettingValue(dbSettings, 'DEPLOYMENT_AMOUNT_STRATEGY', 'auto') as DeploymentAmountStrategy,
+      manualAmountPerRound: getNumberSetting(dbSettings, 'MANUAL_AMOUNT_PER_ROUND', 0.01),
+      targetRounds: getNumberSetting(dbSettings, 'TARGET_ROUNDS', 100),
+      budgetPercentagePerRound: getNumberSetting(dbSettings, 'BUDGET_PERCENTAGE_PER_ROUND', 1.0),
+
+      // Claim Strategy
+      claimStrategy: getSettingValue(dbSettings, 'CLAIM_STRATEGY', 'auto') as ClaimStrategy,
 
       // Smart Bot - Auto-Claim Thresholds
       autoClaimSolThreshold: getNumberSetting(dbSettings, 'AUTO_CLAIM_SOL_THRESHOLD', 0.1),

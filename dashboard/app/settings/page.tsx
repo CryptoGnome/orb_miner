@@ -184,11 +184,37 @@ export default function SettingsPage() {
               (s: any) => s.category === category
             );
 
+            // Helper to check if a setting should be visible based on dependencies
+            const isSettingVisible = (setting: any) => {
+              // Show MANUAL_AMOUNT_PER_ROUND only when DEPLOYMENT_AMOUNT_STRATEGY = 'manual'
+              if (setting.key === 'MANUAL_AMOUNT_PER_ROUND') {
+                return localValues['DEPLOYMENT_AMOUNT_STRATEGY'] === 'manual';
+              }
+              // Show TARGET_ROUNDS only when DEPLOYMENT_AMOUNT_STRATEGY = 'fixed_rounds'
+              if (setting.key === 'TARGET_ROUNDS') {
+                return localValues['DEPLOYMENT_AMOUNT_STRATEGY'] === 'fixed_rounds';
+              }
+              // Show BUDGET_PERCENTAGE_PER_ROUND only when DEPLOYMENT_AMOUNT_STRATEGY = 'percentage'
+              if (setting.key === 'BUDGET_PERCENTAGE_PER_ROUND') {
+                return localValues['DEPLOYMENT_AMOUNT_STRATEGY'] === 'percentage';
+              }
+              // Show claim thresholds only when CLAIM_STRATEGY = 'auto'
+              if (
+                setting.key === 'AUTO_CLAIM_SOL_THRESHOLD' ||
+                setting.key === 'AUTO_CLAIM_ORB_THRESHOLD' ||
+                setting.key === 'AUTO_CLAIM_STAKING_ORB_THRESHOLD'
+              ) {
+                return localValues['CLAIM_STRATEGY'] === 'auto';
+              }
+              // All other settings are always visible
+              return true;
+            };
+
             return (
               <TabsContent key={category} value={category} className="space-y-4">
                 <Card>
                   <CardContent className="space-y-6 pt-6">
-                    {categorySettings.map((setting: any) => (
+                    {categorySettings.filter(isSettingVisible).map((setting: any) => (
                       <div key={setting.key} className="space-y-2">
                         <div className="flex items-start justify-between gap-4">
                           <div className="flex-1">
