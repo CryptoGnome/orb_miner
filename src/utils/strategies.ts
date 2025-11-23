@@ -18,50 +18,51 @@ import {
 } from '../types/strategies';
 
 /**
- * Calculate optimal rounds based on motherload (AUTO strategy)
- *
- * Monte Carlo optimized tiers for maximum ROI.
- * This is the existing logic from smartBot.ts
+ * Default motherload tiers for AUTO strategy
+ * Monte Carlo optimized tiers for maximum ROI
  */
-function calculateTargetRoundsAuto(motherloadOrb: number): number {
-  if (motherloadOrb >= 1200) return 60;
-  if (motherloadOrb >= 1100) return 90;
-  if (motherloadOrb >= 1000) return 120;
-  if (motherloadOrb >= 900) return 160;
-  if (motherloadOrb >= 800) return 200;
-  if (motherloadOrb >= 700) return 240;
-  if (motherloadOrb >= 600) return 280;
-  if (motherloadOrb >= 500) return 320;
-  if (motherloadOrb >= 400) return 360;
-  if (motherloadOrb >= 300) return 400;
-  if (motherloadOrb >= 200) return 440;
-  return 880;
-}
+const DEFAULT_AUTO_TIERS = [
+  { motherloadThreshold: 1600, targetRounds: 40 },
+  { motherloadThreshold: 1500, targetRounds: 50 },
+  { motherloadThreshold: 1400, targetRounds: 60 },
+  { motherloadThreshold: 1300, targetRounds: 70 },
+  { motherloadThreshold: 1200, targetRounds: 80 },
+  { motherloadThreshold: 1100, targetRounds: 100 },
+  { motherloadThreshold: 1000, targetRounds: 120 },
+  { motherloadThreshold: 900, targetRounds: 160 },
+  { motherloadThreshold: 800, targetRounds: 200 },
+  { motherloadThreshold: 700, targetRounds: 240 },
+  { motherloadThreshold: 600, targetRounds: 280 },
+  { motherloadThreshold: 500, targetRounds: 320 },
+  { motherloadThreshold: 400, targetRounds: 360 },
+  { motherloadThreshold: 300, targetRounds: 400 },
+  { motherloadThreshold: 200, targetRounds: 440 },
+  { motherloadThreshold: 0, targetRounds: 880 },
+];
 
 /**
- * Calculate deployment amount using auto-doubling strategy
+ * Calculate optimal rounds based on motherload (AUTO strategy)
  *
- * Starts with a base amount and doubles it for every interval increase in motherload.
- * Example: startAmount = 0.0001, interval = 100
- * - 0-99 ORB: 0.0001 SOL/round
- * - 100-199 ORB: 0.0002 SOL/round
- * - 200-299 ORB: 0.0004 SOL/round
- * - 300-399 ORB: 0.0008 SOL/round
- * etc.
+ * Supports custom tier configuration or falls back to default Monte Carlo optimized tiers
  */
-function calculateAmountAutoDoubling(
+function calculateTargetRoundsAuto(
   motherloadOrb: number,
-  startAmount: number,
-  interval: number
+  customTiers?: Array<{ motherloadThreshold: number; targetRounds: number }>
 ): number {
-  // Calculate how many intervals we've passed
-  const tier = Math.floor(motherloadOrb / interval);
+  const tiers = customTiers && customTiers.length > 0 ? customTiers : DEFAULT_AUTO_TIERS;
 
-  // Double the amount for each tier
-  // Use Math.pow(2, tier) to calculate 2^tier
-  const multiplier = Math.pow(2, tier);
+  // Sort tiers by threshold descending (highest first)
+  const sortedTiers = [...tiers].sort((a, b) => b.motherloadThreshold - a.motherloadThreshold);
 
-  return startAmount * multiplier;
+  // Find the first tier where motherload >= threshold
+  for (const tier of sortedTiers) {
+    if (motherloadOrb >= tier.motherloadThreshold) {
+      return tier.targetRounds;
+    }
+  }
+
+  // Fallback to the last tier's target rounds
+  return sortedTiers[sortedTiers.length - 1]?.targetRounds || 880;
 }
 
 /**
@@ -79,11 +80,14 @@ export function calculateDeploymentAmount(
 
   switch (strategy) {
     case DeploymentAmountStrategy.AUTO: {
-      // Original automatic calculation based on motherload tiers
-      const targetRounds = calculateTargetRoundsAuto(motherloadOrb);
+      // Automatic calculation based on motherload tiers (with optional custom tiers)
+      const targetRounds = calculateTargetRoundsAuto(motherloadOrb, config.customAutoTiers);
       const totalSquares = targetRounds * 25;
       const solPerSquare = usableBudget / totalSquares;
       const solPerRound = solPerSquare * 25;
+
+      const tierNote = config.customAutoTiers ? 'Custom tiers' : 'Optimized tiers';
+      logger.info(`Using AUTO strategy: ${targetRounds} rounds at ${motherloadOrb.toFixed(2)} ORB motherload`);
 
       return {
         solPerSquare,
@@ -91,7 +95,7 @@ export function calculateDeploymentAmount(
         totalSquares: 25,
         estimatedRounds: targetRounds,
         strategyUsed: DeploymentAmountStrategy.AUTO,
-        notes: `Auto-calculated: ${targetRounds} rounds based on ${motherloadOrb.toFixed(2)} ORB motherload`,
+        notes: `Auto (${tierNote}): ${targetRounds} rounds @ ${motherloadOrb.toFixed(2)} ORB`,
       };
     }
 
@@ -148,30 +152,6 @@ export function calculateDeploymentAmount(
         estimatedRounds,
         strategyUsed: DeploymentAmountStrategy.PERCENTAGE,
         notes: `Percentage: ${percentage}% of budget per round`,
-      };
-    }
-
-    case DeploymentAmountStrategy.AUTO_DOUBLING: {
-      // Auto-doubling strategy based on motherload tiers
-      const startAmount = config.autoDoublingStartAmount || 0.0001;
-      const interval = config.autoDoublingInterval || 100;
-      const solPerRound = calculateAmountAutoDoubling(motherloadOrb, startAmount, interval);
-      const solPerSquare = solPerRound / 25;
-      const estimatedRounds = Math.floor(usableBudget / solPerRound);
-
-      const tier = Math.floor(motherloadOrb / interval);
-      logger.info(
-        `Using AUTO_DOUBLING strategy: ${solPerRound.toFixed(6)} SOL per round ` +
-        `(tier ${tier}, motherload: ${motherloadOrb.toFixed(2)} ORB)`
-      );
-
-      return {
-        solPerSquare,
-        solPerRound,
-        totalSquares: 25,
-        estimatedRounds,
-        strategyUsed: DeploymentAmountStrategy.AUTO_DOUBLING,
-        notes: `Auto Doubling (tier ${tier}): ${solPerRound.toFixed(6)} SOL per round at ${motherloadOrb.toFixed(2)} ORB motherload`,
       };
     }
 
@@ -304,20 +284,6 @@ export function validateDeploymentStrategy(
       }
       break;
 
-    case DeploymentAmountStrategy.AUTO_DOUBLING:
-      if (!config.autoDoublingStartAmount || config.autoDoublingStartAmount <= 0) {
-        return {
-          valid: false,
-          error: 'AUTO_DOUBLING strategy requires autoDoublingStartAmount > 0',
-        };
-      }
-      if (config.autoDoublingInterval && config.autoDoublingInterval <= 0) {
-        return {
-          valid: false,
-          error: 'AUTO_DOUBLING strategy requires autoDoublingInterval > 0',
-        };
-      }
-      break;
   }
 
   return { valid: true };

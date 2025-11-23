@@ -35,13 +35,6 @@ export enum DeploymentAmountStrategy {
    */
   PERCENTAGE = 'percentage',
 
-  /**
-   * AUTO_DOUBLING: Modified AUTO strategy that doubles bet every 100 motherload increase
-   * User sets starting amount, bot doubles it based on motherload tier
-   * Example: 0.0001 SOL at 0-100, 0.0002 at 100-200, 0.0004 at 200-300, etc.
-   */
-  AUTO_DOUBLING = 'auto_doubling',
-
   // Future strategies can be added here:
   // AGGRESSIVE = 'aggressive',
   // CONSERVATIVE = 'conservative',
@@ -91,9 +84,8 @@ export interface DeploymentStrategyConfig {
   // PERCENTAGE strategy params
   budgetPercentagePerRound?: number;
 
-  // AUTO_DOUBLING strategy params
-  autoDoublingStartAmount?: number;
-  autoDoublingInterval?: number; // Motherload interval for doubling (default: 100)
+  // AUTO strategy params (optional custom tier configuration)
+  customAutoTiers?: Array<{ motherloadThreshold: number; targetRounds: number }>;
 
   // Common params (used by AUTO and other strategies)
   usableBudget: number;
@@ -140,7 +132,6 @@ export const DEPLOYMENT_STRATEGY_LABELS: Record<DeploymentAmountStrategy, string
   [DeploymentAmountStrategy.MANUAL]: 'Manual (Fixed Amount)',
   [DeploymentAmountStrategy.FIXED_ROUNDS]: 'Fixed Rounds',
   [DeploymentAmountStrategy.PERCENTAGE]: 'Percentage of Budget',
-  [DeploymentAmountStrategy.AUTO_DOUBLING]: 'Auto Doubling (Motherload Tiers)',
 };
 
 export const CLAIM_STRATEGY_LABELS: Record<ClaimStrategy, string> = {
