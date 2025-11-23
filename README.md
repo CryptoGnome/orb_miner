@@ -12,6 +12,22 @@ Fully autonomous Solana mining bot with Monte Carlo-optimized bet sizing, real-t
 
 ---
 
+## 📚 New to Node.js, Servers, or Mining Bots?
+
+**Complete Beginner's Installation Guide:** [INSTALLATION_GUIDE.md](INSTALLATION_GUIDE.md)
+
+This comprehensive guide covers everything step-by-step:
+- ✅ Installing prerequisites (Node.js, Git, etc.)
+- ✅ Creating and securing your Solana wallet
+- ✅ Detailed installation for Windows, Mac, and Linux
+- ✅ First-time setup with screenshots explanations
+- ✅ Monitoring, updating, and troubleshooting
+- ✅ 24/7 server deployment guide
+
+**Already familiar with Node.js?** Continue with the Quick Start below.
+
+---
+
 ## What is ORB?
 
 ORB is a lottery-style mining game on Solana where miners deploy SOL to a 5x5 grid (25 blocks). One random block wins each round, and all miners on that block share the rewards: SOL from losers + 4 ORB + motherload bonus (1/625 chance).

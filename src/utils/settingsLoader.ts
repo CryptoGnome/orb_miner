@@ -115,6 +115,7 @@ export async function initializeDefaultSettings(): Promise<void> {
 
       // Bot Action
       { key: 'BOT_ACTION', value: 'auto-deploy', type: 'string', description: 'Bot action mode' },
+      { key: 'MINING_ENABLED', value: 'true', type: 'boolean', description: 'Master switch to enable/disable mining' },
 
       // Deployment Settings
       { key: 'DEPLOY_STRATEGY', value: 'all', type: 'string', description: 'Deployment strategy (all/single/random)' },

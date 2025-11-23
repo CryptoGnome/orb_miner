@@ -131,15 +131,12 @@ export default function Home() {
     timestamp: new Date(item.timestamp),
   }));
 
-  // Filter by time range and baseline
+  // Filter by time range only - show all data points including losses
   const chartData = allChartData.filter((item: any) => {
-    // Only show points at or above baseline
-    const isAboveBaseline = item.sol >= baseline * 0.95;
-
     // Filter by time range
     const isInTimeRange = timeCutoff === null || item.timestamp >= timeCutoff;
 
-    return isAboveBaseline && isInTimeRange;
+    return isInTimeRange;
   });
 
   // Calculate dynamic Y-axis range based on actual data
@@ -155,7 +152,7 @@ export default function Home() {
     const padding = range * 0.1 || 0.001; // Minimum padding if range is 0
 
     return [
-      Math.max(baseline * 0.98, minValue - padding), // Don't go below baseline
+      minValue - padding, // Show full range including losses
       maxValue + padding
     ];
   };
@@ -212,25 +209,30 @@ export default function Home() {
               {chartData.length > 0 && (
                 <div className="flex-1 relative w-full lg:w-auto min-h-[120px] lg:min-h-[140px]">
                   {/* Time Range Selector */}
-                  <div className="absolute -top-1 lg:-top-2 right-0 z-10 flex gap-1">
-                    {(['1d', '7d', '1m', 'all'] as TimeRange[]).map((range) => (
-                      <button
-                        key={range}
-                        onClick={() => setTimeRange(range)}
-                        className={cn(
-                          "px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider rounded transition-all",
-                          timeRange === range
-                            ? "bg-primary/30 text-primary border border-primary/50"
-                            : "bg-black/40 text-muted-foreground/60 border border-transparent hover:bg-black/60 hover:text-muted-foreground"
-                        )}
-                      >
-                        {range}
-                      </button>
-                    ))}
+                  <div className="absolute -top-1 lg:-top-2 right-0 z-10 flex items-center gap-2">
+                    <span className="text-[8px] text-muted-foreground/50 font-mono">
+                      {chartData.length} pts
+                    </span>
+                    <div className="flex gap-1">
+                      {(['1d', '7d', '1m', 'all'] as TimeRange[]).map((range) => (
+                        <button
+                          key={range}
+                          onClick={() => setTimeRange(range)}
+                          className={cn(
+                            "px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider rounded transition-all",
+                            timeRange === range
+                              ? "bg-primary/30 text-primary border border-primary/50"
+                              : "bg-black/40 text-muted-foreground/60 border border-transparent hover:bg-black/60 hover:text-muted-foreground"
+                          )}
+                        >
+                          {range}
+                        </button>
+                      ))}
+                    </div>
                   </div>
 
                   <ResponsiveContainer width="100%" height={120} className="lg:h-[140px]">
-                    <LineChart data={chartData}>
+                    <LineChart data={chartData} key={`chart-${timeRange}-${chartData.length}`}>
                       <defs>
                         <linearGradient id="colorGradient" x1="0" y1="0" x2="0" y2="1">
                           <stop offset="5%" stopColor={isProfit ? '#22c55e' : '#ef4444'} stopOpacity={0.4}/>

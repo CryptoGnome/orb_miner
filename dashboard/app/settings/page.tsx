@@ -10,7 +10,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { Settings, TrendingUp, Zap, RefreshCw, DollarSign, Shield, Globe, Info } from 'lucide-react';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Button } from '@/components/ui/button';
+import { Settings, TrendingUp, Zap, RefreshCw, DollarSign, Shield, Globe, Info, AlertCircle } from 'lucide-react';
 import { toast } from 'sonner';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { DEPLOYMENT_STRATEGY_DESCRIPTIONS } from '@/lib/strategy-descriptions';
@@ -74,6 +76,8 @@ export default function SettingsPage() {
   const [localValues, setLocalValues] = useState<Record<string, any>>({});
   const [pendingUpdates, setPendingUpdates] = useState<Record<string, any>>({});
   const debounceTimers = useRef<Record<string, NodeJS.Timeout>>({});
+  const [showStrategyDialog, setShowStrategyDialog] = useState(false);
+  const [pendingStrategyChange, setPendingStrategyChange] = useState<string | null>(null);
 
   const { data, isLoading } = useQuery({
     queryKey: ['settings'],
@@ -161,6 +165,13 @@ export default function SettingsPage() {
   }, [data, mutation]);
 
   const handleSettingChange = (key: string, value: any) => {
+    // Special handling for deployment strategy changes - show dialog
+    if (key === 'DEPLOYMENT_AMOUNT_STRATEGY') {
+      setPendingStrategyChange(value);
+      setShowStrategyDialog(true);
+      return; // Don't update immediately
+    }
+
     // Update local state immediately for responsive UI
     setLocalValues((prev) => ({ ...prev, [key]: value }));
 
@@ -170,25 +181,103 @@ export default function SettingsPage() {
       if (!isNaN(value)) {
         debouncedSave(key, value);
       }
-    } else {
-      // Save immediately for non-number types
+    } else if (setting?.type === 'boolean' || setting?.type === 'select') {
+      // Save immediately for toggles and selects (instant feedback)
       mutation.mutate({ key, value });
     }
+    // Text and password fields save on blur only (see handleTextBlur)
   };
 
   const handleTextBlur = (key: string) => {
     const value = localValues[key];
+    const currentValue = data?.settings[key]?.value;
+
     // Only update if changed
-    if (value !== data?.settings[key]?.value) {
+    if (value !== currentValue) {
+      // Special validation for RPC_ENDPOINT
+      if (key === 'RPC_ENDPOINT' && value === 'https://api.mainnet-beta.solana.com') {
+        // Warn if switching to public RPC
+        const confirmSwitch = window.confirm(
+          '⚠️ WARNING: Switching to Public RPC\n\n' +
+          'The default public RPC has strict rate limits and will cause 429 errors.\n\n' +
+          'Current RPC: ' + currentValue + '\n' +
+          'New RPC: ' + value + '\n\n' +
+          'Are you sure you want to switch to the public RPC?'
+        );
+
+        if (!confirmSwitch) {
+          // Revert to current value
+          setLocalValues((prev) => ({ ...prev, [key]: currentValue }));
+          toast.info('RPC change cancelled', {
+            description: 'Keeping your current RPC endpoint'
+          });
+          return;
+        }
+
+        toast.warning('Using public RPC', {
+          description: 'Consider using a premium RPC like Helius for better performance'
+        });
+      }
+
       mutation.mutate({ key, value });
     }
   };
 
-  if (isLoading) {
+  const handleConfirmStrategyChange = () => {
+    if (pendingStrategyChange) {
+      // Update local state
+      setLocalValues((prev) => ({ ...prev, DEPLOYMENT_AMOUNT_STRATEGY: pendingStrategyChange }));
+      // Save to backend
+      mutation.mutate({ key: 'DEPLOYMENT_AMOUNT_STRATEGY', value: pendingStrategyChange });
+    }
+    setShowStrategyDialog(false);
+    setPendingStrategyChange(null);
+  };
+
+  const handleCancelStrategyChange = () => {
+    // Revert to current value in the UI
+    if (data?.settings.DEPLOYMENT_AMOUNT_STRATEGY) {
+      setLocalValues((prev) => ({
+        ...prev,
+        DEPLOYMENT_AMOUNT_STRATEGY: data.settings.DEPLOYMENT_AMOUNT_STRATEGY.value,
+      }));
+    }
+    setShowStrategyDialog(false);
+    setPendingStrategyChange(null);
+  };
+
+  if (isLoading || !data) {
     return (
       <DashboardLayout>
-        <div className="flex h-full items-center justify-center">
-          <Settings className="h-12 w-12 animate-pulse text-primary" />
+        <div className="space-y-6">
+          <div>
+            <h1 className="text-3xl font-bold text-primary flex items-center gap-3">
+              <Settings className="h-8 w-8" />
+              Settings
+            </h1>
+            <p className="text-muted-foreground mt-2">
+              Loading configuration...
+            </p>
+          </div>
+
+          {/* Skeleton Loading State */}
+          <div className="space-y-4">
+            {[1, 2, 3, 4, 5].map((i) => (
+              <Card key={i}>
+                <CardContent className="space-y-4 pt-6">
+                  {[1, 2, 3].map((j) => (
+                    <div key={j} className="flex items-center justify-between">
+                      <div className="space-y-2 flex-1">
+                        <div className="h-4 w-32 bg-muted animate-pulse rounded" />
+                        <div className="h-3 w-48 bg-muted/50 animate-pulse rounded" />
+                      </div>
+                      <div className="h-10 w-48 bg-muted animate-pulse rounded" />
+                    </div>
+                  ))}
+                </CardContent>
+              </Card>
+            ))}
+          </div>
         </div>
       </DashboardLayout>
     );
@@ -219,6 +308,19 @@ export default function SettingsPage() {
             Sensitive data encrypted with AES-256-GCM
           </p>
         </div>
+
+        {/* RPC Warning */}
+        {localValues['RPC_ENDPOINT'] === 'https://api.mainnet-beta.solana.com' && (
+          <div className="flex items-center gap-2 px-3 py-2 rounded-md border border-red-500/30 bg-red-500/5">
+            <Globe className="h-3.5 w-3.5 text-red-500/70" />
+            <p className="text-xs text-muted-foreground">
+              ⚠️ Using public RPC - expect rate limiting (429 errors). Get free premium RPC from{' '}
+              <a href="https://helius.dev" target="_blank" rel="noopener noreferrer" className="text-primary underline">
+                Helius
+              </a>
+            </p>
+          </div>
+        )}
 
         {/* Settings Tabs */}
         <Tabs defaultValue="network" className="w-full">
@@ -437,6 +539,75 @@ export default function SettingsPage() {
           })}
         </Tabs>
         </div>
+
+        {/* Deployment Strategy Change Dialog */}
+        <Dialog open={showStrategyDialog} onOpenChange={setShowStrategyDialog}>
+          <DialogContent className="sm:max-w-[600px]">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <AlertCircle className="h-5 w-5 text-yellow-500" />
+                Deployment Strategy Change
+              </DialogTitle>
+              <DialogDescription className="pt-2 text-base">
+                Your deployment strategy change has been saved and will take effect <strong>at the start of the next round</strong>, but only when:
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="space-y-4 py-4">
+              <div className="space-y-3 text-sm">
+                <div className="flex items-start gap-3 p-3 bg-green-500/10 border border-green-500/20 rounded-lg">
+                  <span className="text-green-500 font-bold">✓</span>
+                  <div>
+                    <p className="font-semibold text-green-600 dark:text-green-400">New Automation Created</p>
+                    <p className="text-muted-foreground mt-1">When automation budget depletes and the bot creates a new automation account</p>
+                  </div>
+                </div>
+
+                <div className="flex items-start gap-3 p-3 bg-green-500/10 border border-green-500/20 rounded-lg">
+                  <span className="text-green-500 font-bold">✓</span>
+                  <div>
+                    <p className="font-semibold text-green-600 dark:text-green-400">Motherload Changes Trigger Restart</p>
+                    <p className="text-muted-foreground mt-1">
+                      When motherload increases by <strong>50%+ AND 100+ ORB</strong> or decreases by <strong>40%+ AND 100+ ORB</strong>
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-start gap-3 p-3 bg-yellow-500/10 border border-yellow-500/20 rounded-lg">
+                  <span className="text-yellow-500 font-bold">!</span>
+                  <div>
+                    <p className="font-semibold text-yellow-600 dark:text-yellow-400">Existing Automation Unchanged</p>
+                    <p className="text-muted-foreground mt-1">
+                      If an automation account already exists, it won't change until it's recreated (see conditions above)
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="border-t pt-4 mt-4">
+                <p className="text-sm font-semibold mb-2">Why does this happen?</p>
+                <p className="text-sm text-muted-foreground">
+                  The automation account is pre-funded on-chain with a specific deployment amount per round.
+                  You cannot change the deployment amount of an existing automation account - it must be closed and recreated.
+                </p>
+              </div>
+
+              <div className="border-t pt-4 mt-4">
+                <p className="text-sm font-semibold mb-2">To force immediate restart:</p>
+                <p className="text-sm text-muted-foreground">
+                  Run <code className="bg-muted px-1 py-0.5 rounded text-xs font-mono">npx ts-node tests/test-close-automation.ts</code> to manually close the automation account.
+                  The bot will recreate it with the new strategy on the next round.
+                </p>
+              </div>
+            </div>
+
+            <DialogFooter>
+              <Button onClick={handleConfirmStrategyChange} className="w-full sm:w-auto">
+                Got it!
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </TooltipProvider>
     </DashboardLayout>
   );

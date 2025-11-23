@@ -20,6 +20,7 @@ export interface Config {
 
   // Bot Action
   botAction: 'auto-deploy' | 'deploy' | 'claim' | 'stake' | 'swap' | 'query';
+  miningEnabled: boolean;
 
   // Deployment Settings
   deployStrategy: string;
@@ -132,6 +133,7 @@ export async function loadConfigWithDB(): Promise<Config> {
 
       // Bot Action
       botAction: getSettingValue(dbSettings, 'BOT_ACTION', 'auto-deploy') as Config['botAction'],
+      miningEnabled: getBooleanSetting(dbSettings, 'MINING_ENABLED', true),
 
       // Deployment Settings
       deployStrategy: getSettingValue(dbSettings, 'DEPLOY_STRATEGY', 'all'),

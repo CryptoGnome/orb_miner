@@ -3,9 +3,10 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
+import { Switch } from '@/components/ui/switch';
 import {
   LayoutDashboard,
   DollarSign,
@@ -22,7 +23,9 @@ import {
   Github,
   ScrollText,
   X,
+  Power,
 } from 'lucide-react';
+import { toast } from 'sonner';
 
 const navigation = [
   { name: 'Overview', href: '/', icon: LayoutDashboard },
@@ -46,6 +49,22 @@ async function fetchGitStatus() {
   return res.json();
 }
 
+async function fetchSettings() {
+  const res = await fetch('/api/settings');
+  if (!res.ok) throw new Error('Failed to fetch settings');
+  return res.json();
+}
+
+async function updateMiningEnabled(enabled: boolean) {
+  const res = await fetch('/api/settings', {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ key: 'MINING_ENABLED', value: enabled }),
+  });
+  if (!res.ok) throw new Error('Failed to update mining status');
+  return res.json();
+}
+
 interface SidebarProps {
   isOpen?: boolean;
   onClose?: () => void;
@@ -54,6 +73,7 @@ interface SidebarProps {
 export function Sidebar({ isOpen = true, onClose }: SidebarProps = {}) {
   const pathname = usePathname();
   const [mounted, setMounted] = useState(false);
+  const queryClient = useQueryClient();
 
   // Only apply active state after hydration to avoid mismatch
   useEffect(() => {
@@ -72,10 +92,34 @@ export function Sidebar({ isOpen = true, onClose }: SidebarProps = {}) {
     refetchInterval: 60000, // Check every minute
   });
 
+  const { data: settings } = useQuery({
+    queryKey: ['settings'],
+    queryFn: fetchSettings,
+    refetchInterval: 10000,
+  });
+
+  const toggleMiningMutation = useMutation({
+    mutationFn: updateMiningEnabled,
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['settings'] });
+      queryClient.invalidateQueries({ queryKey: ['status'] });
+      const enabled = data.value;
+      toast.success(enabled ? 'Mining enabled' : 'Mining paused', {
+        description: enabled ? 'Bot will mine on next round' : 'Mining paused - claims active',
+      });
+    },
+    onError: (error: any) => {
+      toast.error('Failed to toggle mining', {
+        description: error.message,
+      });
+    },
+  });
+
   const motherload = status?.round?.motherlode || 0;
   const motherloadThreshold = status?.automation?.motherloadThreshold || 150;
   const isAboveThreshold = motherload >= motherloadThreshold;
   const hasAutomation = status?.automation?.isActive || false;
+  const miningEnabled = settings?.settings?.MINING_ENABLED?.value === 'true' || settings?.settings?.MINING_ENABLED?.value === true;
 
   return (
     <>
@@ -140,18 +184,40 @@ export function Sidebar({ isOpen = true, onClose }: SidebarProps = {}) {
         <div className="rounded-lg bg-accent/50 p-3 space-y-2">
           <p className="text-xs font-medium text-muted-foreground">Bot Status</p>
 
+          {/* Mining Control */}
+          <div className="flex items-center justify-between py-1">
+            <div className="flex items-center gap-2">
+              <Power className={cn(
+                "h-3 w-3",
+                miningEnabled ? "text-green-500" : "text-muted-foreground"
+              )} />
+              <span className={cn(
+                "text-xs font-medium",
+                miningEnabled ? "text-foreground" : "text-muted-foreground"
+              )}>
+                Mining
+              </span>
+            </div>
+            <Switch
+              checked={miningEnabled}
+              onCheckedChange={(checked) => toggleMiningMutation.mutate(checked)}
+              disabled={toggleMiningMutation.isPending}
+              className="scale-75 data-[state=checked]:bg-green-500"
+            />
+          </div>
+
           {/* Active/Waiting Status */}
           <div className="flex items-center gap-2">
-            {hasAutomation && isAboveThreshold ? (
+            {hasAutomation && isAboveThreshold && miningEnabled ? (
               <>
                 <Play className="h-3 w-3 text-green-500" />
-                <span className="text-sm font-semibold text-green-500">Mining</span>
+                <span className="text-sm font-semibold text-green-500">Active</span>
                 <div className="h-2 w-2 rounded-full bg-green-500 animate-pulse ml-auto" />
               </>
             ) : (
               <>
                 <Pause className="h-3 w-3 text-yellow-500" />
-                <span className="text-sm font-semibold text-yellow-500">Waiting</span>
+                <span className="text-sm font-semibold text-yellow-500">Paused</span>
                 <div className="h-2 w-2 rounded-full bg-yellow-500 animate-pulse ml-auto" />
               </>
             )}

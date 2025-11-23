@@ -135,7 +135,7 @@ export function buildAutomateInstruction(
   deposit: number,          // Initial funding for automation account (in SOL)
   feePerExecution: number,  // Fee paid to executor per round (in SOL)
   strategy: AutomationStrategy = AutomationStrategy.Random,
-  squareMask: bigint = 25n, // For Random: number of squares (25). For Preferred: bitmask of squares
+  squareMask: bigint = BigInt(25), // For Random: number of squares (25). For Preferred: bitmask of squares
   executor?: PublicKey      // Executor address (defaults to wallet for self-execution)
 ): TransactionInstruction {
   const wallet = getWallet();
@@ -310,8 +310,8 @@ export async function buildExecuteAutomationInstruction(): Promise<TransactionIn
   const data = Buffer.alloc(13);
   data.writeUInt8(0x06, 0);                        // Execute automation discriminator
   // Convert BigInt to safe number (u32 range)
-  const amountU32 = Number(amountPerSquare & 0xFFFFFFFFn);
-  const maskU32 = Number(mask & 0xFFFFFFFFn);
+  const amountU32 = Number(amountPerSquare & BigInt(0xFFFFFFFF));
+  const maskU32 = Number(mask & BigInt(0xFFFFFFFF));
   data.writeUInt32LE(amountU32, 1);                // Amount field
   data.writeUInt32LE(0, 5);                        // Unknown/padding
   data.writeUInt32LE(maskU32, 9);                  // Square count
