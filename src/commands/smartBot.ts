@@ -1500,6 +1500,22 @@ export async function smartBotCommand(): Promise<void> {
             logger.debug('Failed to record motherload:', error);
           }
 
+          // Check if mining is enabled via master switch
+          if (!config.miningEnabled) {
+            ui.info('⏸️  Mining paused via master switch - waiting...');
+            ui.info('Still checking for claimable rewards and performing swaps...');
+
+            // Do periodic operations even when not mining
+            await autoClaimMiningRewards();
+            await autoClaimStakingRewards();
+            await autoStakeOrb();
+            await autoSwapCheck();
+            await captureBalanceSnapshot();
+
+            // Skip to next round check (don't create automation or deploy)
+            continue;
+          }
+
           // If motherload below threshold, skip automation setup/deployment but still do claims/swaps
           if (currentMotherload < config.motherloadThreshold) {
             ui.info(`⏸️  Motherload (${currentMotherload.toFixed(2)} ORB) below threshold (${config.motherloadThreshold} ORB) - waiting...`);

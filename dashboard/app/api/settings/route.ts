@@ -81,6 +81,14 @@ export const SETTINGS_DEFINITIONS: SettingDefinition[] = [
 
   // Mining Settings
   {
+    key: 'MINING_ENABLED',
+    type: 'boolean',
+    label: 'Mining Enabled',
+    description: 'Master switch to enable/disable mining (claims and swaps still active when disabled)',
+    defaultValue: true,
+    category: 'mining',
+  },
+  {
     key: 'MOTHERLOAD_THRESHOLD',
     type: 'number',
     label: 'Motherload Threshold',
