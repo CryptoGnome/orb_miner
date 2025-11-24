@@ -416,7 +416,7 @@ export default function SettingsPage() {
 
         {/* Settings Tabs */}
         <Tabs defaultValue="network" className="w-full">
-          <TabsList className="grid w-full grid-cols-2 lg:grid-cols-8 gap-2">
+          <TabsList className="grid w-full grid-cols-2 lg:grid-cols-9 gap-2">
             {categories.map((category) => {
               const config = CATEGORY_CONFIG[category];
               const Icon = config.icon;
