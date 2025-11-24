@@ -5,12 +5,18 @@ import { config, loadAndCacheConfig } from '@bot/utils/config';
 import { fetchBoard, fetchMiner, fetchStake, fetchTreasury, getAutomationPDA, calculateAccruedStakingRewards } from '@bot/utils/accounts';
 import { getWallet, getBalances } from '@bot/utils/wallet';
 import { getOrbPrice } from '@bot/utils/jupiter';
+import { isMaintenanceMode, MAINTENANCE_RESPONSE } from '@/lib/maintenance';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
 export async function GET() {
   try {
+    // Check for maintenance mode - don't access database if in maintenance
+    if (isMaintenanceMode()) {
+      return NextResponse.json(MAINTENANCE_RESPONSE, { status: 503 });
+    }
+
     // Ensure bot utilities are initialized
     await ensureBotInitialized();
 

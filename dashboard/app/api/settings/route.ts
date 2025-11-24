@@ -3,6 +3,7 @@ import { ensureBotInitialized } from '@/lib/init-bot';
 import { allQuery, runQuery, getQuery } from '@bot/utils/database';
 import { encrypt, decrypt, isEncrypted } from '@bot/utils/encryption';
 import { refreshConfig } from '@bot/utils/config';
+import { isMaintenanceMode, MAINTENANCE_RESPONSE } from '@/lib/maintenance';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -18,7 +19,7 @@ export interface SettingDefinition {
   max?: number;
   step?: number;
   options?: { value: string; label: string }[];
-  category: 'network' | 'mining' | 'automation' | 'swap' | 'stake' | 'fees' | 'safety';
+  category: 'network' | 'mining' | 'automation' | 'swap' | 'stake' | 'fees' | 'safety' | 'maintenance';
   sensitive?: boolean; // If true, value will be encrypted in DB
   placeholder?: string;
 }
@@ -478,6 +479,11 @@ export const SETTINGS_DEFINITIONS: SettingDefinition[] = [
 
 export async function GET() {
   try {
+    // Check for maintenance mode - don't access database if in maintenance
+    if (isMaintenanceMode()) {
+      return NextResponse.json(MAINTENANCE_RESPONSE, { status: 503 });
+    }
+
     await ensureBotInitialized();
 
     // Fetch all settings from database
@@ -539,6 +545,11 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
+    // Check for maintenance mode - don't access database if in maintenance
+    if (isMaintenanceMode()) {
+      return NextResponse.json(MAINTENANCE_RESPONSE, { status: 503 });
+    }
+
     await ensureBotInitialized();
 
     const body = await request.json();

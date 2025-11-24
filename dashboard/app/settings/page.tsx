@@ -12,7 +12,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { Settings, TrendingUp, Zap, RefreshCw, DollarSign, Shield, Globe, Info, AlertCircle } from 'lucide-react';
+import { Settings, TrendingUp, Zap, RefreshCw, DollarSign, Shield, Globe, Info, AlertCircle, Wrench } from 'lucide-react';
 import { toast } from 'sonner';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { DEPLOYMENT_STRATEGY_DESCRIPTIONS } from '@/lib/strategy-descriptions';
@@ -69,6 +69,11 @@ const CATEGORY_CONFIG = {
     icon: Shield,
     description: 'Safety limits and dry run mode',
   },
+  maintenance: {
+    label: 'Maintenance',
+    icon: Wrench,
+    description: 'Database maintenance and reset tools',
+  },
 };
 
 export default function SettingsPage() {
@@ -78,6 +83,11 @@ export default function SettingsPage() {
   const debounceTimers = useRef<Record<string, NodeJS.Timeout>>({});
   const [showStrategyDialog, setShowStrategyDialog] = useState(false);
   const [pendingStrategyChange, setPendingStrategyChange] = useState<string | null>(null);
+  const [showResetDialog, setShowResetDialog] = useState(false);
+  const [resetStep, setResetStep] = useState<'confirm' | 'baseline' | 'resetting' | 'success'>('confirm');
+  const [recordAsBaseline, setRecordAsBaseline] = useState(false);
+  const [resetResult, setResetResult] = useState<any>(null);
+  const [loadingMessage, setLoadingMessage] = useState('');
 
   const { data, isLoading } = useQuery({
     queryKey: ['settings'],
@@ -246,6 +256,83 @@ export default function SettingsPage() {
     setPendingStrategyChange(null);
   };
 
+  const loadingMessages = [
+    "Politely asking the bot to take a break...",
+    "Convincing electrons to rearrange themselves...",
+    "Sweeping old data under the digital rug...",
+    "Teaching the database some new tricks...",
+    "Mining for a fresh start...",
+    "Negotiating with stubborn file locks...",
+    "Asking Windows nicely to let go...",
+    "Performing database yoga (very flexible)...",
+    "Turning it off and on again (the pro way)...",
+    "Dusting off the cobwebs...",
+    "Making backup copies like a responsible adult...",
+    "Giving the database a spa day...",
+    "Resetting the timeline (no time travel involved)...",
+    "Clearing the slate (metaphorically speaking)...",
+    "Channeling inner zen while files cooperate...",
+  ];
+
+  const handleResetPnL = async () => {
+    try {
+      setResetStep('resetting');
+
+      // Start cycling through loading messages
+      let messageIndex = 0;
+      setLoadingMessage(loadingMessages[0]);
+
+      const messageInterval = setInterval(() => {
+        messageIndex = (messageIndex + 1) % loadingMessages.length;
+        setLoadingMessage(loadingMessages[messageIndex]);
+      }, 2000); // Change message every 2 seconds
+
+      const res = await fetch('/api/pnl/reset', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ recordAsBaseline }),
+      });
+
+      clearInterval(messageInterval);
+
+      const result = await res.json();
+
+      if (!res.ok) {
+        throw new Error(result.error || 'Failed to reset PnL');
+      }
+
+      setResetResult(result);
+      setResetStep('success');
+
+      toast.success('PnL Reset Complete', {
+        description: 'Database has been reset and backed up successfully',
+      });
+
+      // Refresh data
+      queryClient.invalidateQueries({ queryKey: ['pnl'] });
+      queryClient.invalidateQueries({ queryKey: ['transactions'] });
+    } catch (error: any) {
+      setResetStep('confirm');
+      toast.error('Reset Failed', {
+        description: error.message,
+      });
+    }
+  };
+
+  const handleOpenResetDialog = () => {
+    setResetStep('confirm');
+    setRecordAsBaseline(false);
+    setResetResult(null);
+    setShowResetDialog(true);
+  };
+
+  const handleCloseResetDialog = () => {
+    setShowResetDialog(false);
+    setResetStep('confirm');
+    setRecordAsBaseline(false);
+    setResetResult(null);
+  };
+
   if (isLoading || !data) {
     return (
       <DashboardLayout>
@@ -324,7 +411,7 @@ export default function SettingsPage() {
 
         {/* Settings Tabs */}
         <Tabs defaultValue="network" className="w-full">
-          <TabsList className="grid w-full grid-cols-2 lg:grid-cols-7 gap-2">
+          <TabsList className="grid w-full grid-cols-2 lg:grid-cols-8 gap-2">
             {categories.map((category) => {
               const config = CATEGORY_CONFIG[category];
               const Icon = config.icon;
@@ -338,6 +425,66 @@ export default function SettingsPage() {
           </TabsList>
 
           {categories.map((category) => {
+            // Special handling for maintenance category
+            if (category === 'maintenance') {
+              return (
+                <TabsContent key={category} value={category} className="space-y-4">
+                  <Card>
+                    <CardContent className="space-y-6 pt-6">
+                      <div className="space-y-4">
+                        <div className="flex items-start gap-3 p-4 bg-yellow-500/10 border border-yellow-500/20 rounded-lg">
+                          <AlertCircle className="h-5 w-5 text-yellow-500 mt-0.5" />
+                          <div className="flex-1">
+                            <h3 className="font-semibold text-yellow-600 dark:text-yellow-400">
+                              Reset PnL Tracking
+                            </h3>
+                            <p className="text-sm text-muted-foreground mt-1">
+                              Clear all historical PnL data and start tracking fresh. A backup will be created automatically.
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="space-y-3">
+                          <h4 className="font-medium">How it works:</h4>
+
+                          <div className="flex items-start gap-2 p-3 bg-green-500/10 border border-green-500/20 rounded-lg">
+                            <Info className="h-4 w-4 text-green-500 mt-0.5 flex-shrink-0" />
+                            <div className="text-sm">
+                              <p className="font-semibold text-green-600 dark:text-green-400">Fully Automatic Process</p>
+                              <div className="text-muted-foreground mt-1 space-y-1">
+                                <p>1. Bot automatically pauses when you click Reset</p>
+                                <p>2. Database is backed up and reset</p>
+                                <p>3. Bot automatically resumes mining</p>
+                                <p className="mt-2">⏱️ Takes about 25-60 seconds (usually ~30s)</p>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="space-y-3">
+                          <h4 className="font-medium">When to use this:</h4>
+                          <ul className="list-disc list-inside text-sm text-muted-foreground space-y-1">
+                            <li>PnL data is corrupted or inaccurate</li>
+                            <li>Want to start tracking from scratch</li>
+                            <li>Need to set a new baseline after manual deposits</li>
+                          </ul>
+                        </div>
+
+                        <Button
+                          onClick={handleOpenResetDialog}
+                          variant="destructive"
+                          className="w-full"
+                        >
+                          <AlertCircle className="h-4 w-4 mr-2" />
+                          Reset PnL Data
+                        </Button>
+                      </div>
+                    </CardContent>
+                  </Card>
+                </TabsContent>
+              );
+            }
+
             const categorySettings = Object.values(settings).filter(
               (s: any) => s.category === category
             );
@@ -605,6 +752,162 @@ export default function SettingsPage() {
               <Button onClick={handleConfirmStrategyChange} className="w-full sm:w-auto">
                 Got it!
               </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* PnL Reset Dialog */}
+        <Dialog open={showResetDialog} onOpenChange={setShowResetDialog}>
+          <DialogContent className="sm:max-w-[600px]">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <AlertCircle className="h-5 w-5 text-red-500" />
+                {resetStep === 'success' ? 'Reset Complete' : 'Reset PnL Tracking'}
+              </DialogTitle>
+              <DialogDescription className="pt-2">
+                {resetStep === 'confirm' && 'This will delete all historical PnL data from the database.'}
+                {resetStep === 'baseline' && 'Would you like to record your current automation balance as a baseline?'}
+                {resetStep === 'resetting' && 'Resetting PnL data...'}
+                {resetStep === 'success' && 'Your PnL data has been reset successfully.'}
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="space-y-4 py-4">
+              {resetStep === 'confirm' && (
+                <>
+                  <div className="space-y-3 text-sm">
+                    <div className="flex items-start gap-3 p-3 bg-red-500/10 border border-red-500/20 rounded-lg">
+                      <AlertCircle className="h-5 w-5 text-red-500 mt-0.5" />
+                      <div className="flex-1">
+                        <p className="font-semibold text-red-600 dark:text-red-400">Warning: Destructive Action</p>
+                        <p className="text-muted-foreground mt-1">
+                          This will permanently delete all transaction history, PnL calculations, and related data.
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-start gap-3 p-3 bg-blue-500/10 border border-blue-500/20 rounded-lg">
+                      <Info className="h-5 w-5 text-blue-500 mt-0.5" />
+                      <div className="flex-1">
+                        <p className="font-semibold text-blue-600 dark:text-blue-400">Backup Created</p>
+                        <p className="text-muted-foreground mt-1">
+                          A backup of your database will be saved before deletion.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="space-y-3 border-t pt-4">
+                    <h4 className="font-medium text-sm">What happens next:</h4>
+                    <ol className="list-decimal list-inside text-sm text-muted-foreground space-y-1">
+                      <li>Database backup created in data/backups/</li>
+                      <li>All PnL data and transactions deleted</li>
+                      <li>Fresh database initialized</li>
+                      <li>Settings preserved (RPC, private key, etc.)</li>
+                    </ol>
+                  </div>
+
+                  <div className="flex items-start gap-3 p-3 bg-green-500/10 border border-green-500/20 rounded-lg">
+                    <div className="flex items-center h-5">
+                      <Switch
+                        id="baseline"
+                        checked={recordAsBaseline}
+                        onCheckedChange={setRecordAsBaseline}
+                      />
+                    </div>
+                    <div className="flex-1">
+                      <Label htmlFor="baseline" className="font-semibold text-green-600 dark:text-green-400 cursor-pointer">
+                        Record current automation as baseline
+                      </Label>
+                      <p className="text-sm text-muted-foreground mt-1">
+                        If you have funds in your automation account, record them as starting capital for accurate future PnL tracking.
+                      </p>
+                    </div>
+                  </div>
+                </>
+              )}
+
+              {resetStep === 'resetting' && (
+                <div className="flex flex-col items-center justify-center py-8 space-y-4">
+                  <RefreshCw className="h-12 w-12 animate-spin text-primary" />
+                  <p className="text-sm font-medium">Resetting database...</p>
+                  <p className="text-xs text-muted-foreground italic">{loadingMessage}</p>
+                </div>
+              )}
+
+              {resetStep === 'success' && resetResult && (
+                <>
+                  <div className="space-y-3 text-sm">
+                    <div className="flex items-start gap-3 p-3 bg-green-500/10 border border-green-500/20 rounded-lg">
+                      <span className="text-green-500 font-bold text-lg">✓</span>
+                      <div className="flex-1">
+                        <p className="font-semibold text-green-600 dark:text-green-400">Reset Complete</p>
+                        <p className="text-muted-foreground mt-1">
+                          Your PnL tracking has been reset and a backup has been created.
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="border rounded-lg p-4 space-y-2 bg-muted/30">
+                      <h4 className="font-medium text-sm">Current State (at reset):</h4>
+                      <div className="grid grid-cols-2 gap-2 text-sm">
+                        <div>
+                          <span className="text-muted-foreground">Automation:</span>
+                          <span className="font-mono ml-2">{resetResult.currentState.automationBalance.toFixed(4)} SOL</span>
+                        </div>
+                        <div>
+                          <span className="text-muted-foreground">Claimable SOL:</span>
+                          <span className="font-mono ml-2">{resetResult.currentState.claimableSol.toFixed(4)} SOL</span>
+                        </div>
+                        <div>
+                          <span className="text-muted-foreground">Claimable ORB:</span>
+                          <span className="font-mono ml-2">{resetResult.currentState.claimableOrb.toFixed(4)} ORB</span>
+                        </div>
+                        <div>
+                          <span className="text-muted-foreground">Wallet ORB:</span>
+                          <span className="font-mono ml-2">{resetResult.currentState.walletOrb.toFixed(4)} ORB</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {resetResult.baselineRecorded && (
+                      <div className="flex items-start gap-3 p-3 bg-blue-500/10 border border-blue-500/20 rounded-lg">
+                        <Info className="h-5 w-5 text-blue-500 mt-0.5" />
+                        <div className="flex-1">
+                          <p className="font-semibold text-blue-600 dark:text-blue-400">Baseline Recorded</p>
+                          <p className="text-muted-foreground mt-1">
+                            Starting capital: {resetResult.currentState.automationBalance.toFixed(4)} SOL
+                          </p>
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="border-t pt-3">
+                      <p className="text-xs text-muted-foreground">
+                        Backup saved to: <span className="font-mono">{resetResult.backupPath}</span>
+                      </p>
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+
+            <DialogFooter>
+              {resetStep === 'confirm' && (
+                <>
+                  <Button onClick={handleCloseResetDialog} variant="outline">
+                    Cancel
+                  </Button>
+                  <Button onClick={handleResetPnL} variant="destructive">
+                    Reset PnL Data
+                  </Button>
+                </>
+              )}
+              {resetStep === 'success' && (
+                <Button onClick={handleCloseResetDialog} className="w-full sm:w-auto">
+                  Done
+                </Button>
+              )}
             </DialogFooter>
           </DialogContent>
         </Dialog>

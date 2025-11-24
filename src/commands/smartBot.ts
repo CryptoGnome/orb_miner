@@ -8,6 +8,8 @@ import {
   fetchStake,
   fetchTreasury
 } from '../utils/accounts';
+import * as fs from 'fs';
+import * as path from 'path';
 import {
   sendAndConfirmTransaction,
   buildAutomateInstruction,
@@ -1645,8 +1647,33 @@ export async function smartBotCommand(): Promise<void> {
     let lastRoundId = '';
     let deployedRounds = 0;
 
+    // Define maintenance file path
+    const MAINTENANCE_FILE = path.join(process.cwd(), 'data', '.maintenance');
+
     while (isRunning) {
       try {
+        // Check for maintenance mode using FILE (not database to avoid lock issues)
+        if (fs.existsSync(MAINTENANCE_FILE)) {
+          ui.info('🔧 Maintenance mode detected - closing database...');
+          ui.info('Database is being reset. Bot will resume automatically when done.');
+
+          // Close database connection to release file lock
+          await closeDatabase();
+
+          // Poll for maintenance file removal WITHOUT opening database
+          ui.info('Waiting for maintenance to complete...');
+          while (fs.existsSync(MAINTENANCE_FILE) && isRunning) {
+            await sleep(2000); // Check file every 2 seconds
+          }
+
+          // Maintenance complete - reinitialize database
+          if (isRunning) {
+            ui.success('✅ Maintenance complete - resuming operations');
+            await initializeDatabase();
+          }
+          continue; // Skip this iteration and start fresh
+        }
+
         // Get current round FIRST (priority: detect new rounds quickly)
         const board = await fetchBoard();
         const currentRoundId = board.roundId.toString();

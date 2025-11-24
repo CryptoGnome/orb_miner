@@ -1,12 +1,18 @@
 import { NextResponse } from 'next/server';
 import { ensureBotInitialized } from '@/lib/init-bot';
 import { getQuery } from '@bot/utils/database';
+import { isMaintenanceMode, MAINTENANCE_RESPONSE } from '@/lib/maintenance';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
 export async function GET() {
   try {
+    // Check for maintenance mode - don't access database if in maintenance
+    if (isMaintenanceMode()) {
+      return NextResponse.json(MAINTENANCE_RESPONSE, { status: 503 });
+    }
+
     await ensureBotInitialized();
 
     // Check if PRIVATE_KEY is set
