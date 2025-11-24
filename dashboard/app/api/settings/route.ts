@@ -388,6 +388,25 @@ export const SETTINGS_DEFINITIONS: SettingDefinition[] = [
     step: 10,
     category: 'stake',
   },
+  {
+    key: 'PRICE_BASED_STAKING_ENABLED',
+    type: 'boolean',
+    label: 'Enable Price-Based Staking',
+    description: 'Stake when price low, unstake+sell when price high (overrides amount-based staking & MIN_ORB_PRICE_USD)',
+    defaultValue: false,
+    category: 'stake',
+  },
+  {
+    key: 'STAKING_PRICE_THRESHOLD_USD',
+    type: 'number',
+    label: 'Staking Price Threshold (USD)',
+    description: 'Stake if price below this, unstake+sell if above (overrides MIN_ORB_PRICE_USD when price-based staking enabled)',
+    defaultValue: 30,
+    min: 0,
+    max: 200,
+    step: 5,
+    category: 'stake',
+  },
 
   // Fee Settings
   {

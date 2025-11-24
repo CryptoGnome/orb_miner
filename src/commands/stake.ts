@@ -33,7 +33,7 @@ export async function stakeCommand(amount?: number): Promise<void> {
     }
 
     // Build and send stake instruction
-    const stakeIx = buildStakeInstruction(stakeAmount);
+    const stakeIx = await buildStakeInstruction(stakeAmount);
     const { signature, fee: actualFee } = await sendAndConfirmTransaction([stakeIx], 'Stake');
 
     logger.info(`Stake successful!`);

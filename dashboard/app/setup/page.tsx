@@ -168,6 +168,10 @@ export default function SetupPage() {
               <AlertDescription className="space-y-2">
                 <p className="font-semibold">What happens next?</p>
                 <p>If the bot is waiting for setup, it will automatically detect the configuration and start within a few seconds.</p>
+                <div className="mt-2 p-2 bg-amber-50 border border-amber-200 rounded">
+                  <p className="text-sm font-semibold text-amber-900">⚠️ Mining Starts Paused</p>
+                  <p className="text-sm text-amber-800">For safety, mining is disabled by default. Enable it in the Settings page when you&apos;re ready to start.</p>
+                </div>
                 <p className="mt-2">Otherwise, restart the bot to apply the new settings:</p>
                 <ol className="list-decimal ml-6 mt-2 space-y-1">
                   <li>Go to your terminal where the bot is running</li>

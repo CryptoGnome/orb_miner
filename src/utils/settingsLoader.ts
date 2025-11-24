@@ -115,7 +115,7 @@ export async function initializeDefaultSettings(): Promise<void> {
 
       // Bot Action
       { key: 'BOT_ACTION', value: 'auto-deploy', type: 'string', description: 'Bot action mode' },
-      { key: 'MINING_ENABLED', value: 'true', type: 'boolean', description: 'Master switch to enable/disable mining' },
+      { key: 'MINING_ENABLED', value: 'false', type: 'boolean', description: 'Master switch to enable/disable mining (defaults to paused for safety)' },
 
       // Deployment Settings
       { key: 'DEPLOY_STRATEGY', value: 'all', type: 'string', description: 'Deployment strategy (all/single/random)' },
@@ -164,6 +164,10 @@ export async function initializeDefaultSettings(): Promise<void> {
       // Smart Bot - Auto-Stake
       { key: 'AUTO_STAKE_ENABLED', value: 'false', type: 'boolean', description: 'Enable auto-stake' },
       { key: 'STAKE_ORB_THRESHOLD', value: '50', type: 'number', description: 'ORB threshold for staking' },
+
+      // Smart Bot - Price-Based Staking
+      { key: 'PRICE_BASED_STAKING_ENABLED', value: 'false', type: 'boolean', description: 'Enable price-based staking (overrides amount-based staking & MIN_ORB_PRICE_USD)' },
+      { key: 'STAKING_PRICE_THRESHOLD_USD', value: '30', type: 'number', description: 'Price threshold: stake if below, unstake+sell if above (overrides MIN_ORB_PRICE_USD when enabled)' },
 
       // Legacy Auto-Deploy Settings
       { key: 'AUTO_DEPLOY_ITERATIONS', value: '0', type: 'number', description: 'Auto-deploy iterations (0=infinite)' },

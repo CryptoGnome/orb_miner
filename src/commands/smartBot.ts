@@ -16,6 +16,7 @@ import {
   buildClaimOreInstruction,
   buildClaimYieldInstruction,
   buildStakeInstruction,
+  buildUnstakeInstruction,
   AutomationStrategy
 } from '../utils/program';
 import { getConnection, getCurrentSlot } from '../utils/solana';
@@ -1002,7 +1003,12 @@ async function autoSellOrb(): Promise<void> {
     }
 
     // Check if ORB price meets minimum threshold
-    if (config.minOrbPriceUsd > 0) {
+    // When price-based staking is enabled, use stakingPriceThresholdUsd instead of minOrbPriceUsd
+    const minPriceThreshold = config.priceBasedStakingEnabled
+      ? config.stakingPriceThresholdUsd
+      : config.minOrbPriceUsd;
+
+    if (minPriceThreshold > 0) {
       const { priceInUsd } = await getOrbPrice();
 
       if (priceInUsd === 0) {
@@ -1010,12 +1016,13 @@ async function autoSellOrb(): Promise<void> {
         return;
       }
 
-      if (priceInUsd < config.minOrbPriceUsd) {
-        ui.warning(`ORB price too low: $${priceInUsd.toFixed(2)} (min: $${config.minOrbPriceUsd.toFixed(2)})`);
+      if (priceInUsd < minPriceThreshold) {
+        const thresholdSource = config.priceBasedStakingEnabled ? 'staking threshold' : 'min price';
+        ui.warning(`ORB price too low: $${priceInUsd.toFixed(2)} (${thresholdSource}: $${minPriceThreshold.toFixed(2)})`);
         return;
       }
 
-      logger.debug(`ORB price: $${priceInUsd.toFixed(2)}`);
+      logger.debug(`ORB price: $${priceInUsd.toFixed(2)} (threshold: $${minPriceThreshold.toFixed(2)})`);
     }
 
     // All checks passed - proceed with swap
@@ -1086,10 +1093,113 @@ async function autoSwapCheck(): Promise<void> {
 }
 
 /**
- * Auto-stake: Stake excess ORB when threshold is met
+ * Price-based staking: Stake when price is low, unstake when price is high
+ */
+async function priceBasedStaking(): Promise<void> {
+  try {
+    const now = Date.now();
+    if (now - lastStakeCheck < config.checkRewardsIntervalMs * 2) {
+      return; // Check less frequently than claims
+    }
+    lastStakeCheck = now;
+
+    // Get current ORB price
+    const { priceInUsd } = await getOrbPrice();
+    if (priceInUsd === 0) {
+      logger.debug('Cannot fetch ORB price - skipping price-based staking');
+      return;
+    }
+
+    logger.debug(`Price-based staking check: ORB price $${priceInUsd.toFixed(2)}, threshold $${config.stakingPriceThresholdUsd.toFixed(2)}`);
+
+    // Price below threshold: Stake ALL available ORB
+    if (priceInUsd < config.stakingPriceThresholdUsd) {
+      const balances = await getBalances();
+      const orbAvailable = balances.orb - config.minOrbToKeep;
+
+      if (orbAvailable >= 0.1) { // Minimum 0.1 ORB to stake
+        ui.stake(`Price low ($${priceInUsd.toFixed(2)}): Staking ${orbAvailable.toFixed(2)} ORB...`);
+
+        if (config.dryRun) {
+          logger.info(`[DRY RUN] Would stake ${orbAvailable.toFixed(2)} ORB (price: $${priceInUsd.toFixed(2)})`);
+          return;
+        }
+
+        const instruction = await buildStakeInstruction(orbAvailable);
+        const { signature, fee: actualFee } = await sendAndConfirmTransaction([instruction], 'Price-Based Stake');
+        ui.success(`Staked ${orbAvailable.toFixed(2)} ORB at $${priceInUsd.toFixed(2)}`);
+        logger.debug(`Transaction: ${signature}`);
+
+        // Record stake transaction
+        try {
+          await recordTransaction({
+            type: 'stake',
+            signature,
+            orbAmount: orbAvailable,
+            status: 'success',
+            notes: `Price-based stake: $${priceInUsd.toFixed(2)} < $${config.stakingPriceThresholdUsd.toFixed(2)}`,
+            orbPriceUsd: priceInUsd,
+            txFeeSol: actualFee,
+          });
+        } catch (error) {
+          logger.error('Failed to record stake:', error);
+        }
+      }
+    }
+    // Price above threshold: Unstake ALL staked ORB
+    else {
+      const stakeAccount = await fetchStake(getWallet().publicKey);
+
+      if (stakeAccount && stakeAccount.balance.gt(new BN(0))) {
+        // Convert BN balance (in lamports) to number (in ORB)
+        const unstakeAmount = stakeAccount.balance.toNumber() / 1e9;
+        ui.stake(`Price high ($${priceInUsd.toFixed(2)}): Unstaking ${unstakeAmount.toFixed(2)} ORB...`);
+
+        if (config.dryRun) {
+          logger.info(`[DRY RUN] Would unstake ${unstakeAmount.toFixed(2)} ORB (price: $${priceInUsd.toFixed(2)})`);
+          return;
+        }
+
+        const instruction = await buildUnstakeInstruction(unstakeAmount);
+        const { signature, fee: actualFee } = await sendAndConfirmTransaction([instruction], 'Price-Based Unstake');
+        ui.success(`Unstaked ${unstakeAmount.toFixed(2)} ORB at $${priceInUsd.toFixed(2)} (will be sold by auto-swap)`);
+        logger.debug(`Transaction: ${signature}`);
+
+        // Record unstake transaction
+        try {
+          await recordTransaction({
+            type: 'unstake',
+            signature,
+            orbAmount: unstakeAmount,
+            status: 'success',
+            notes: `Price-based unstake: $${priceInUsd.toFixed(2)} > $${config.stakingPriceThresholdUsd.toFixed(2)}`,
+            orbPriceUsd: priceInUsd,
+            txFeeSol: actualFee,
+          });
+        } catch (error) {
+          logger.error('Failed to record unstake:', error);
+        }
+      } else {
+        logger.debug('No staked ORB to unstake');
+      }
+    }
+  } catch (error) {
+    logger.error('Price-based staking failed:', error);
+  }
+}
+
+/**
+ * Auto-stake: Stake excess ORB when threshold is met (amount-based)
  */
 async function autoStakeOrb(): Promise<void> {
   try {
+    // If price-based staking is enabled, use that instead
+    if (config.priceBasedStakingEnabled) {
+      await priceBasedStaking();
+      return;
+    }
+
+    // Otherwise, use amount-based staking
     if (!config.autoStakeEnabled) {
       return;
     }
@@ -1113,7 +1223,7 @@ async function autoStakeOrb(): Promise<void> {
         return;
       }
 
-      const instruction = buildStakeInstruction(stakeAmount);
+      const instruction = await buildStakeInstruction(stakeAmount);
       const { signature, fee: actualFee } = await sendAndConfirmTransaction([instruction], 'Auto-Stake');
       ui.success(`Staked ${stakeAmount.toFixed(2)} ORB`);
       logger.debug(`Transaction: ${signature}`);
@@ -1481,21 +1591,30 @@ export async function smartBotCommand(): Promise<void> {
       const claimableOrb = miner ? Number(miner.rewardsOre) / 1e9 : 0;
       const stakedOrb = stake ? Number(stake.balance) / 1e9 : 0;
 
-      // Calculate total starting value (ONLY SOL - ORB only counts as profit when sold)
+      // Get ORB price to value existing ORB
+      const { priceInSol: orbPriceSol } = await getOrbPrice();
+
+      // Calculate total starting value INCLUDING all existing ORB (wallet + staked)
+      // This ensures existing ORB doesn't appear as profit
       const totalSol = walletBalances.sol + automationSol + claimableSol;
-      const botOrb = walletBalances.orb + claimableOrb; // Bot ORB only (no staked)
-      const totalStartingValue = totalSol; // Only SOL, ORB is profit when sold
+      const walletOrb = walletBalances.orb + claimableOrb;
+      const totalOrb = walletOrb + stakedOrb; // Include staked ORB in baseline
+      const orbValueInSol = totalOrb * orbPriceSol;
+      const totalStartingValue = totalSol + orbValueInSol; // Include all ORB value in baseline
 
       await setBaselineBalance(totalStartingValue);
-      ui.success(`Baseline set: ${totalStartingValue.toFixed(4)} SOL (realized value only)`);
+      ui.success(`Baseline set: ${totalStartingValue.toFixed(4)} SOL (total value)`);
       ui.info(`  - SOL: ${totalSol.toFixed(4)} (wallet: ${walletBalances.sol.toFixed(4)}, automation: ${automationSol.toFixed(4)}, claimable: ${claimableSol.toFixed(4)})`);
-      if (botOrb > 0) {
-        ui.info(`  - Bot ORB: ${botOrb.toFixed(2)} (unrealized, becomes profit when swapped)`);
+      if (walletOrb > 0) {
+        ui.info(`  - Wallet ORB: ${walletOrb.toFixed(2)} ORB = ${(walletOrb * orbPriceSol).toFixed(4)} SOL`);
       }
       if (stakedOrb > 0) {
-        ui.info(`  - Staked ORB: ${stakedOrb.toFixed(2)} (excluded from PnL)`);
+        ui.info(`  - Staked ORB: ${stakedOrb.toFixed(2)} ORB = ${(stakedOrb * orbPriceSol).toFixed(4)} SOL`);
       }
-      ui.info('PnL tracks SOL only - ORB becomes profit when you swap it to SOL');
+      if (totalOrb > 0) {
+        ui.info(`  - Total ORB: ${totalOrb.toFixed(2)} ORB = ${orbValueInSol.toFixed(4)} SOL (@ ${orbPriceSol.toFixed(6)} SOL/ORB)`);
+      }
+      ui.info('Note: All existing assets (SOL + ORB + staked ORB) included in baseline');
       ui.blank();
     } else {
       ui.section('BASELINE');
@@ -1504,6 +1623,7 @@ export async function smartBotCommand(): Promise<void> {
     }
 
     ui.section('BOT CONFIGURATION');
+    ui.status('Mining Status', config.miningEnabled ? '✅ Enabled' : '⏸️  Paused (enable in Settings to start mining)');
     ui.status('Motherload Threshold', `${config.motherloadThreshold} ORB`);
     ui.status('Auto-Claim SOL', `${config.autoClaimSolThreshold} SOL`);
     ui.status('Auto-Claim ORB', `${config.autoClaimOrbThreshold} ORB`);
@@ -1513,7 +1633,12 @@ export async function smartBotCommand(): Promise<void> {
 
     // Startup complete - unified PnL system handles reconciliation automatically
 
-    ui.info('Bot is now running... Will create automation when motherload >= threshold');
+    if (config.miningEnabled) {
+      ui.info('Bot is now running... Will create automation when motherload >= threshold');
+    } else {
+      ui.warning('⏸️  Mining is PAUSED - Enable mining in Settings page to start');
+      ui.info('The bot will still monitor rewards and perform auto-claims/swaps');
+    }
     ui.blank();
 
     // Step 2: Main autonomous loop

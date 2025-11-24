@@ -72,6 +72,10 @@ export interface Config {
   autoStakeEnabled: boolean;
   stakeOrbThreshold: number;
 
+  // Smart Bot - Price-Based Staking (overrides amount-based when enabled)
+  priceBasedStakingEnabled: boolean;
+  stakingPriceThresholdUsd: number;
+
   // Auto-Deploy Settings (legacy)
   autoDeployIterations: number;
   deployMaxRetries: number;
@@ -133,7 +137,7 @@ export async function loadConfigWithDB(): Promise<Config> {
 
       // Bot Action
       botAction: getSettingValue(dbSettings, 'BOT_ACTION', 'auto-deploy') as Config['botAction'],
-      miningEnabled: getBooleanSetting(dbSettings, 'MINING_ENABLED', true),
+      miningEnabled: getBooleanSetting(dbSettings, 'MINING_ENABLED', false),
 
       // Deployment Settings
       deployStrategy: getSettingValue(dbSettings, 'DEPLOY_STRATEGY', 'all'),
@@ -184,6 +188,10 @@ export async function loadConfigWithDB(): Promise<Config> {
       // Smart Bot - Auto-Stake Settings
       autoStakeEnabled: getBooleanSetting(dbSettings, 'AUTO_STAKE_ENABLED', false),
       stakeOrbThreshold: getNumberSetting(dbSettings, 'STAKE_ORB_THRESHOLD', 50),
+
+      // Smart Bot - Price-Based Staking
+      priceBasedStakingEnabled: getBooleanSetting(dbSettings, 'PRICE_BASED_STAKING_ENABLED', false),
+      stakingPriceThresholdUsd: getNumberSetting(dbSettings, 'STAKING_PRICE_THRESHOLD_USD', 30),
 
       // Auto-Deploy Settings (legacy)
       autoDeployIterations: getNumberSetting(dbSettings, 'AUTO_DEPLOY_ITERATIONS', 0),

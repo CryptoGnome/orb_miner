@@ -17,6 +17,7 @@ import {
   fetchMiner,
 } from "../src/utils/accounts";
 import { initializeDatabase, recordTransaction } from "../src/utils/database";
+import { loadAndCacheConfig } from "../src/utils/config";
 
 const DB_PATH = path.join(process.cwd(), "data", "orb_mining.db");
 const BACKUP_DIR = path.join(process.cwd(), "data", "backups");
@@ -65,6 +66,11 @@ async function resetPnL() {
     console.log("Nothing to reset. Run the bot first to create the database.");
     return;
   }
+
+  // Load config from database BEFORE we delete it
+  console.log("📋 Loading configuration...");
+  await loadAndCacheConfig();
+  console.log("✅ Configuration loaded\n");
 
   // Confirm deletion
   const confirm1 = await askQuestion(

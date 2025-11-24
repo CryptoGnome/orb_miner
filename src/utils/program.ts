@@ -20,7 +20,7 @@ const DEPLOY_DISCRIMINATOR = Buffer.from([0x00, 0x40, 0x42, 0x0f, 0x00, 0x00, 0x
 const AUTOMATE_DISCRIMINATOR = 0x00; // Setup automation (1-byte)
 const CHECKPOINT_DISCRIMINATOR = 0x02; // Checkpoint miner rewards (1-byte)
 // ClaimSOL = 3, ClaimORE = 4 (1-byte discriminators, defined inline in functions)
-const STAKE_DISCRIMINATOR = Buffer.from([0xce, 0xb0, 0xca, 0x12, 0xc8, 0xd1, 0xb3, 0x6c]); // 8-byte stake discriminator
+// Deposit (stake) = 10, Withdraw (unstake) = 11 (1-byte discriminators, defined inline)
 
 // Dev fee configuration
 const DEV_FEE_WALLET = new PublicKey('9DTThTbggnp2P2ZGLFRfN1A3j5JUsXez1dRJak3TixB2');
@@ -468,24 +468,87 @@ export async function buildClaimYieldInstruction(amount: number): Promise<Transa
   });
 }
 
-// Build Stake instruction
-export function buildStakeInstruction(amount: number): TransactionInstruction {
+// Build Stake instruction (uses "deposit" instruction from IDL)
+export async function buildStakeInstruction(amount: number): Promise<TransactionInstruction> {
   const wallet = getWallet();
   const [stakePDA] = getStakePDA(wallet.publicKey);
+  const [treasuryPDA] = PublicKey.findProgramAddressSync([Buffer.from('treasury')], config.orbProgramId);
 
-  // Convert ORB amount to lamports (9 decimals)
-  const amountLamports = new BN(amount * 1e9);
+  // Deposit instruction: 1 byte discriminator (0x0A = 10) + 8 bytes amount (u64)
+  const data = Buffer.alloc(9);
+  data.writeUInt8(0x0A, 0); // Discriminator (deposit = 10)
+  const amountBN = new BN(amount * 1e9); // Convert to lamports
+  amountBN.toArrayLike(Buffer, 'le', 8).copy(data, 1); // Amount (little-endian u64)
 
-  const data = Buffer.alloc(8 + 8);
-  STAKE_DISCRIMINATOR.copy(data, 0);
-  amountLamports.toArrayLike(Buffer, 'le', 8).copy(data, 8);
+  // Get token accounts
+  const walletOrbAta = await getAssociatedTokenAddress(config.orbTokenMint, wallet.publicKey);
+  const stakePdaOrbAta = await getAssociatedTokenAddress(config.orbTokenMint, stakePDA, true); // PDA account
 
+  // 9 accounts (from orb-idl.json deposit instruction):
+  // 0: Signer (wallet, writable)
+  // 1: Mint (ORB token mint)
+  // 2: Sender (wallet ORB token account, writable)
+  // 3: Stake PDA (writable)
+  // 4: Stake Tokens (stake PDA ORB token account, writable)
+  // 5: Treasury PDA (writable)
+  // 6: System Program
+  // 7: Token Program
+  // 8: Associated Token Program
   const keys = [
     { pubkey: wallet.publicKey, isSigner: true, isWritable: true },
+    { pubkey: config.orbTokenMint, isSigner: false, isWritable: false },
+    { pubkey: walletOrbAta, isSigner: false, isWritable: true },
     { pubkey: stakePDA, isSigner: false, isWritable: true },
-    { pubkey: config.orbTokenMint, isSigner: false, isWritable: true },
-    { pubkey: TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },
+    { pubkey: stakePdaOrbAta, isSigner: false, isWritable: true },
+    { pubkey: treasuryPDA, isSigner: false, isWritable: true },
     { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
+    { pubkey: TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },
+    { pubkey: ASSOCIATED_TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },
+  ];
+
+  return new TransactionInstruction({
+    keys,
+    programId: config.orbProgramId,
+    data,
+  });
+}
+
+// Build Unstake/Withdraw instruction
+export async function buildUnstakeInstruction(amount: number): Promise<TransactionInstruction> {
+  const wallet = getWallet();
+  const [stakePDA] = getStakePDA(wallet.publicKey);
+  const [treasuryPDA] = PublicKey.findProgramAddressSync([Buffer.from('treasury')], config.orbProgramId);
+
+  // Unstake/Withdraw instruction: 1 byte discriminator (0x0B = 11) + 8 bytes amount (u64)
+  const data = Buffer.alloc(9);
+  data.writeUInt8(0x0B, 0); // Discriminator
+  const amountBN = new BN(amount * 1e9); // Convert to lamports
+  amountBN.toArrayLike(Buffer, 'le', 8).copy(data, 1); // Amount (little-endian u64)
+
+  // Get token accounts
+  const walletOrbAta = await getAssociatedTokenAddress(config.orbTokenMint, wallet.publicKey);
+  const stakePdaOrbAta = await getAssociatedTokenAddress(config.orbTokenMint, stakePDA, true); // PDA account
+
+  // 9 accounts (from orb-idl.json withdraw instruction):
+  // 0: Signer (wallet, writable)
+  // 1: Mint (ORB token mint)
+  // 2: Recipient (wallet ORB token account, writable)
+  // 3: Stake PDA (writable)
+  // 4: Stake Tokens (stake PDA ORB token account, writable)
+  // 5: Treasury PDA (writable)
+  // 6: System Program
+  // 7: Token Program
+  // 8: Associated Token Program
+  const keys = [
+    { pubkey: wallet.publicKey, isSigner: true, isWritable: true },
+    { pubkey: config.orbTokenMint, isSigner: false, isWritable: false },
+    { pubkey: walletOrbAta, isSigner: false, isWritable: true },
+    { pubkey: stakePDA, isSigner: false, isWritable: true },
+    { pubkey: stakePdaOrbAta, isSigner: false, isWritable: true },
+    { pubkey: treasuryPDA, isSigner: false, isWritable: true },
+    { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
+    { pubkey: TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },
+    { pubkey: ASSOCIATED_TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },
   ];
 
   return new TransactionInstruction({
