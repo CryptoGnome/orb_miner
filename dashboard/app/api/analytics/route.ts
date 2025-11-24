@@ -29,15 +29,20 @@ async function getPriceHistory(limit: number = 100): Promise<any[]> {
   });
 }
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
     await ensureBotInitialized();
 
+    // Parse query parameters for dynamic data limits
+    const { searchParams } = new URL(request.url);
+    const limitParam = searchParams.get('limit');
+    const balanceLimit = limitParam ? parseInt(limitParam, 10) : 100;
+
     // Fetch analytics data in parallel
     const [balanceHistory, dailySummaries, priceHistory, motherloadHistory, motherloadStats] = await Promise.all([
-      getBalanceHistory(100),
+      getBalanceHistory(balanceLimit),
       getDailySummaries(30),
-      getPriceHistory(100),
+      getPriceHistory(balanceLimit),
       getMotherloadHistory(500), // Get more history for better chart resolution
       getMotherloadStats(), // Get overall stats
     ]);

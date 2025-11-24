@@ -491,49 +491,8 @@ async function displayQuickPnL(
       solPriceUsd
     );
 
-    // Display unified PnL
-    logger.info('═══════════════════════════════════════════════');
-    logger.info('                 📊 PROFIT & LOSS              ');
-    logger.info('═══════════════════════════════════════════════');
-
-    // Main PnL (wallet balance as source of truth)
-    const pnlEmoji = pnl.summary.isProfitable ? '✅' : '❌';
-    const profitSign = pnl.summary.netProfit >= 0 ? '+' : '';
-    logger.info(`💰 Net Profit: ${pnlEmoji} ${profitSign}${formatSol(pnl.summary.netProfit)} SOL (${formatPercent(pnl.summary.roi)})`);
-    logger.info(`   Starting: ${formatSol(pnl.truePnL.startingBalance)} SOL → Current: ${formatSol(pnl.truePnL.currentBalance)} SOL`);
-
-    if (!pnl.truePnL.hasBaseline) {
-      logger.info(`   ⚠️  No baseline set - profit calculated from earliest snapshot`);
-    }
-
-    // Current Holdings
-    logger.info('');
-    logger.info('📈 Current Holdings:');
-    logger.info(`   SOL: ${formatSol(pnl.truePnL.holdings.totalSol)} (wallet: ${formatSol(balances.sol)}, automation: ${formatSol(automationBalance)}, claimable: ${formatSol(claimableSol)})`);
-    logger.info(`   ORB: ${formatOrb(pnl.truePnL.holdings.totalOrb)} = ${formatSol(pnl.truePnL.holdings.orbValueSol)} SOL @ $${orbPriceUsd.toFixed(2)}/ORB`);
-
-    // Income & Expenses Breakdown
-    logger.info('');
-    logger.info('💵 Income:');
-    logger.info(`   Mining: ${formatSol(pnl.breakdown.income.solFromMining)} SOL + ${formatOrb(pnl.breakdown.income.orbFromMining)} ORB`);
-    if (pnl.breakdown.income.solFromSwaps > 0) {
-      logger.info(`   Swaps: ${formatSol(pnl.breakdown.income.solFromSwaps)} SOL (sold ${formatOrb(pnl.breakdown.income.orbSwappedCount)} ORB)`);
-    }
-    logger.info(`   Total: ${formatSol(pnl.breakdown.income.totalSolIncome)} SOL`);
-
-    logger.info('');
-    logger.info('💸 Expenses:');
-    logger.info(`   Transaction Fees: ${formatSol(pnl.breakdown.expenses.transactionFees)} SOL`);
-    logger.info(`   Protocol Fees: ${formatSol(pnl.breakdown.expenses.protocolFees)} SOL (10% deploy fee)`);
-    logger.info(`   Dev Fees: ${formatSol(pnl.breakdown.expenses.devFees)} SOL (0.5%)`);
-    logger.info(`   Total Fees: ${formatSol(pnl.breakdown.expenses.totalExpenses)} SOL`);
-    logger.info(`   Capital Deployed: ${formatSol(pnl.breakdown.expenses.deployedSol)} SOL (in automation account)`);
-
-    // Stats
-    logger.info('');
-    logger.info(`📊 Activity: ${pnl.breakdown.stats.roundsParticipated} rounds, ${pnl.breakdown.stats.totalDeployments} deployments, ${pnl.breakdown.stats.totalClaims} claims`);
-
-    logger.info('═══════════════════════════════════════════════');
+    // PnL data is still calculated for UI and database tracking
+    // Display removed since UI now shows this information
   } catch (error) {
     logger.debug('Failed to display unified PnL:', error);
     // Don't throw - this is non-critical

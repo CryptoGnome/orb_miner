@@ -32,8 +32,9 @@ async function fetchPnL() {
   return res.json();
 }
 
-async function fetchAnalytics() {
-  const res = await fetch('/api/analytics');
+async function fetchAnalytics(limit?: number) {
+  const url = limit ? `/api/analytics?limit=${limit}` : '/api/analytics';
+  const res = await fetch(url);
   if (!res.ok) throw new Error('Failed to fetch analytics');
   return res.json();
 }
@@ -48,6 +49,23 @@ async function triggerClaim() {
 }
 
 type TimeRange = '1d' | '7d' | '1m' | 'all';
+
+// Calculate required data points for each time range
+// Balance snapshots are taken every 5 minutes
+const getDataLimitForTimeRange = (range: TimeRange): number => {
+  switch (range) {
+    case '1d':
+      return 300;  // 25 hours (24h + buffer)
+    case '7d':
+      return 2100; // 7.3 days (7d + buffer)
+    case '1m':
+      return 9000; // 31 days (1 month + buffer)
+    case 'all':
+      return 50000; // Fetch all available data (very large limit)
+    default:
+      return 300;
+  }
+};
 
 export default function Home() {
   const [timeRange, setTimeRange] = useState<TimeRange>('7d');
@@ -65,9 +83,12 @@ export default function Home() {
     refetchInterval: 30000,
   });
 
+  // Calculate limit based on current time range
+  const dataLimit = getDataLimitForTimeRange(timeRange);
+
   const { data: analytics, isLoading: analyticsLoading } = useQuery({
-    queryKey: ['analytics'],
-    queryFn: fetchAnalytics,
+    queryKey: ['analytics', dataLimit],
+    queryFn: () => fetchAnalytics(dataLimit),
     refetchInterval: 60000,
   });
 
@@ -126,8 +147,8 @@ export default function Home() {
 
   const allChartData = (analytics?.balanceHistory || []).map((item: any) => ({
     time: format(new Date(item.timestamp), 'MMM dd HH:mm'),
-    sol: item.totalSol || 0,
-    isProfit: (item.totalSol || 0) >= baseline,
+    value: item.totalValue || 0,
+    isProfit: (item.totalValue || 0) >= baseline,
     timestamp: new Date(item.timestamp),
   }));
 
@@ -143,7 +164,7 @@ export default function Home() {
   const getYAxisDomain = () => {
     if (chartData.length === 0) return ['auto', 'auto'];
 
-    const values = chartData.map((d: any) => d.sol);
+    const values = chartData.map((d: any) => d.value);
     const minValue = Math.min(...values);
     const maxValue = Math.max(...values);
     const range = maxValue - minValue;
@@ -262,11 +283,11 @@ export default function Home() {
                           padding: '4px 8px'
                         }}
                         labelStyle={{ color: '#888', fontSize: 9 }}
-                        formatter={(value: any) => [`${Number(value).toFixed(4)} SOL`, '']}
+                        formatter={(value: any) => [`${Number(value).toFixed(4)} SOL (Total Value)`, '']}
                       />
                       <Line
                         type="monotone"
-                        dataKey="sol"
+                        dataKey="value"
                         stroke={isProfit ? '#22c55e' : '#ef4444'}
                         strokeWidth={2.5}
                         dot={false}
