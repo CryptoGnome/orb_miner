@@ -71,38 +71,51 @@ export default function Transactions() {
                     <TableHead className="text-xs">Time</TableHead>
                     <TableHead className="text-xs text-right">SOL</TableHead>
                     <TableHead className="text-xs text-right">ORB</TableHead>
+                    <TableHead className="text-xs text-right">Tx Fee</TableHead>
+                    <TableHead className="text-xs text-right">Protocol Fee</TableHead>
                     <TableHead className="text-xs text-center">Status</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {transactions.map((tx: any) => (
-                    <TableRow key={tx.id}>
-                      <TableCell>
-                        <Badge variant="outline" className={getTypeBadgeColor(tx.type)}>
-                          {tx.type.replace('_', ' ')}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="text-xs text-muted-foreground">
-                        {formatDistance(new Date(tx.timestamp), new Date(), { addSuffix: true })}
-                      </TableCell>
-                      <TableCell className="text-sm text-right font-mono">
-                        {tx.sol_amount ? `${tx.sol_amount.toFixed(4)}` : '-'}
-                      </TableCell>
-                      <TableCell className="text-sm text-right font-mono">
-                        {tx.orb_amount ? `${tx.orb_amount.toFixed(2)}` : '-'}
-                      </TableCell>
-                      <TableCell className="text-center">
-                        <Badge
-                          variant="outline"
-                          className={tx.status === 'completed'
-                            ? 'bg-green-500/20 text-green-500 border-green-500/50'
-                            : 'bg-yellow-500/20 text-yellow-500 border-yellow-500/50'}
-                        >
-                          {tx.status}
-                        </Badge>
-                      </TableCell>
-                    </TableRow>
-                  ))}
+                  {transactions.map((tx: any) => {
+                    const totalFees = (tx.tx_fee_sol || 0) + (tx.protocol_fee_sol || 0);
+                    const hasFees = totalFees > 0;
+
+                    return (
+                      <TableRow key={tx.id}>
+                        <TableCell>
+                          <Badge variant="outline" className={getTypeBadgeColor(tx.type)}>
+                            {tx.type.replace('_', ' ')}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-xs text-muted-foreground">
+                          {formatDistance(new Date(tx.timestamp), new Date(), { addSuffix: true })}
+                        </TableCell>
+                        <TableCell className="text-sm text-right font-mono">
+                          {tx.sol_amount ? `${tx.sol_amount.toFixed(4)}` : '-'}
+                        </TableCell>
+                        <TableCell className="text-sm text-right font-mono">
+                          {tx.orb_amount ? `${tx.orb_amount.toFixed(2)}` : '-'}
+                        </TableCell>
+                        <TableCell className="text-xs text-right font-mono text-red-400">
+                          {tx.tx_fee_sol ? `${tx.tx_fee_sol.toFixed(6)}` : '-'}
+                        </TableCell>
+                        <TableCell className="text-xs text-right font-mono text-red-400">
+                          {tx.protocol_fee_sol ? `${tx.protocol_fee_sol.toFixed(6)}` : '-'}
+                        </TableCell>
+                        <TableCell className="text-center">
+                          <Badge
+                            variant="outline"
+                            className={tx.status === 'completed'
+                              ? 'bg-green-500/20 text-green-500 border-green-500/50'
+                              : 'bg-yellow-500/20 text-yellow-500 border-yellow-500/50'}
+                          >
+                            {tx.status}
+                          </Badge>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
                 </TableBody>
               </Table>
               </div>
