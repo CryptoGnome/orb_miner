@@ -16,7 +16,7 @@ import {
   getAutomationPDA,
   fetchMiner,
 } from "../src/utils/accounts";
-import { initializeDatabase, recordTransaction } from "../src/utils/database";
+import { initializeDatabase, recordTransaction, allQuery, runQuery } from "../src/utils/database";
 import { loadAndCacheConfig } from "../src/utils/config";
 
 const DB_PATH = path.join(process.cwd(), "data", "orb_mining.db");
@@ -67,9 +67,16 @@ async function resetPnL() {
     return;
   }
 
-  // Initialize database first so we can load config
-  console.log("📋 Loading configuration...");
+  // Initialize database first so we can load config and backup settings
+  console.log("📋 Loading configuration and backing up settings...");
   await initializeDatabase();
+
+  // Backup ALL settings (including encrypted values) BEFORE loading config
+  const backupSettings = await allQuery<{ key: string; value: string; type: string; description: string }>(
+    'SELECT key, value, type, description FROM settings'
+  );
+  console.log(`✅ Backed up ${backupSettings.length} settings`);
+
   await loadAndCacheConfig();
   console.log("✅ Configuration loaded\n");
 
@@ -143,6 +150,22 @@ async function resetPnL() {
       console.log("\n🔄 Initializing fresh database...");
       await initializeDatabase();
 
+      // Restore all settings from backup
+      console.log("🔄 Restoring settings...");
+      for (const setting of backupSettings) {
+        await runQuery(
+          `INSERT INTO settings (key, value, type, description, updated_at)
+           VALUES (?, ?, ?, ?, strftime('%s', 'now'))
+           ON CONFLICT(key) DO UPDATE SET
+             value = excluded.value,
+             type = excluded.type,
+             description = excluded.description,
+             updated_at = strftime('%s', 'now')`,
+          [setting.key, setting.value, setting.type, setting.description]
+        );
+      }
+      console.log(`✅ Restored ${backupSettings.length} settings`);
+
       // Record current automation balance as setup transaction
       await recordTransaction({
         type: "automation_setup",
@@ -170,6 +193,23 @@ async function resetPnL() {
       // Just initialize empty database
       console.log("\n🔄 Initializing fresh database...");
       await initializeDatabase();
+
+      // Restore all settings from backup
+      console.log("🔄 Restoring settings...");
+      for (const setting of backupSettings) {
+        await runQuery(
+          `INSERT INTO settings (key, value, type, description, updated_at)
+           VALUES (?, ?, ?, ?, strftime('%s', 'now'))
+           ON CONFLICT(key) DO UPDATE SET
+             value = excluded.value,
+             type = excluded.type,
+             description = excluded.description,
+             updated_at = strftime('%s', 'now')`,
+          [setting.key, setting.value, setting.type, setting.description]
+        );
+      }
+      console.log(`✅ Restored ${backupSettings.length} settings`);
+
       console.log("✅ Fresh database created");
       console.log("\n💡 PnL tracking will start from 0 on next bot run");
     }
@@ -177,6 +217,23 @@ async function resetPnL() {
     // No automation exists, just initialize empty
     console.log("\n🔄 Initializing fresh database...");
     await initializeDatabase();
+
+    // Restore all settings from backup
+    console.log("🔄 Restoring settings...");
+    for (const setting of backupSettings) {
+      await runQuery(
+        `INSERT INTO settings (key, value, type, description, updated_at)
+         VALUES (?, ?, ?, ?, strftime('%s', 'now'))
+         ON CONFLICT(key) DO UPDATE SET
+           value = excluded.value,
+           type = excluded.type,
+           description = excluded.description,
+           updated_at = strftime('%s', 'now')`,
+        [setting.key, setting.value, setting.type, setting.description]
+      );
+    }
+    console.log(`✅ Restored ${backupSettings.length} settings`);
+
     console.log("✅ Fresh database created");
     console.log("\n💡 PnL tracking will start from 0 on next bot run");
   }
