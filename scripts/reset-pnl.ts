@@ -67,8 +67,9 @@ async function resetPnL() {
     return;
   }
 
-  // Load config from database BEFORE we delete it
+  // Initialize database first so we can load config
   console.log("📋 Loading configuration...");
+  await initializeDatabase();
   await loadAndCacheConfig();
   console.log("✅ Configuration loaded\n");
 
