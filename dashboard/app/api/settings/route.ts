@@ -19,7 +19,7 @@ export interface SettingDefinition {
   max?: number;
   step?: number;
   options?: { value: string; label: string }[];
-  category: 'network' | 'mining' | 'automation' | 'swap' | 'stake' | 'fees' | 'safety' | 'maintenance';
+  category: 'network' | 'mining' | 'automation' | 'swap' | 'stake' | 'fees' | 'safety' | 'maintenance' | 'display';
   sensitive?: boolean; // If true, value will be encrypted in DB
   placeholder?: string;
 }
@@ -474,6 +474,24 @@ export const SETTINGS_DEFINITIONS: SettingDefinition[] = [
     description: 'Hide sensitive information in logs',
     defaultValue: false,
     category: 'safety',
+  },
+
+  // Display Settings
+  {
+    key: 'ENABLE_NEW_ROUND_ANIMATION',
+    type: 'boolean',
+    label: 'Enable New Round Animation',
+    description: 'Show confetti celebration when a new round starts',
+    defaultValue: true,
+    category: 'display',
+  },
+  {
+    key: 'ENABLE_MOTHERLOAD_ANIMATION',
+    type: 'boolean',
+    label: 'Enable Motherload Animation',
+    description: 'Show confetti celebration when motherload hits threshold',
+    defaultValue: true,
+    category: 'display',
   },
 ];
 

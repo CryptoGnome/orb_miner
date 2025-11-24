@@ -12,7 +12,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { Settings, TrendingUp, Zap, RefreshCw, DollarSign, Shield, Globe, Info, AlertCircle, Wrench } from 'lucide-react';
+import { Settings, TrendingUp, Zap, RefreshCw, DollarSign, Shield, Globe, Info, AlertCircle, Wrench, Eye } from 'lucide-react';
 import { toast } from 'sonner';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { DEPLOYMENT_STRATEGY_DESCRIPTIONS } from '@/lib/strategy-descriptions';
@@ -68,6 +68,11 @@ const CATEGORY_CONFIG = {
     label: 'Safety',
     icon: Shield,
     description: 'Safety limits and dry run mode',
+  },
+  display: {
+    label: 'Display',
+    icon: Eye,
+    description: 'UI and celebration animation settings',
   },
   maintenance: {
     label: 'Maintenance',

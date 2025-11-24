@@ -40,6 +40,12 @@ async function fetchAnalytics(limit?: number) {
   return res.json();
 }
 
+async function fetchSettings() {
+  const res = await fetch('/api/settings');
+  if (!res.ok) throw new Error('Failed to fetch settings');
+  return res.json();
+}
+
 async function triggerClaim() {
   const res = await fetch('/api/claim', { method: 'POST' });
   if (!res.ok) {
@@ -91,6 +97,12 @@ export default function Home() {
     queryKey: ['analytics', dataLimit],
     queryFn: () => fetchAnalytics(dataLimit),
     refetchInterval: 60000,
+  });
+
+  const { data: settingsData } = useQuery({
+    queryKey: ['settings'],
+    queryFn: fetchSettings,
+    refetchInterval: 60000, // Refresh every 60 seconds
   });
 
   const claimMutation = useMutation({
@@ -186,6 +198,8 @@ export default function Home() {
         currentRoundId={status?.round?.id}
         currentMotherlode={status?.round?.motherlode}
         motherloadThreshold={status?.automation?.motherloadThreshold || 300}
+        enableNewRoundAnimation={settingsData?.settings?.ENABLE_NEW_ROUND_ANIMATION?.value ?? true}
+        enableMotherloadAnimation={settingsData?.settings?.ENABLE_MOTHERLOAD_ANIMATION?.value ?? true}
       />
 
       <div className="space-y-4">

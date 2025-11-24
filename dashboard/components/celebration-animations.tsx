@@ -8,12 +8,16 @@ interface CelebrationAnimationsProps {
   currentRoundId?: string;
   currentMotherlode?: number;
   motherloadThreshold?: number;
+  enableNewRoundAnimation?: boolean;
+  enableMotherloadAnimation?: boolean;
 }
 
 export function CelebrationAnimations({
   currentRoundId,
   currentMotherlode,
   motherloadThreshold = 300,
+  enableNewRoundAnimation = true,
+  enableMotherloadAnimation = true,
 }: CelebrationAnimationsProps) {
   const [prevRoundId, setPrevRoundId] = useState<string | null>(null);
   const [prevMotherlode, setPrevMotherlode] = useState<number>(0);
@@ -23,7 +27,7 @@ export function CelebrationAnimations({
 
   // Track round changes
   useEffect(() => {
-    if (!currentRoundId) return;
+    if (!currentRoundId || !enableNewRoundAnimation) return;
 
     if (prevRoundId === null) {
       // First load - just set the value
@@ -40,11 +44,11 @@ export function CelebrationAnimations({
       // Stop confetti after 5 seconds
       setTimeout(() => setShowRoundConfetti(false), 5000);
     }
-  }, [currentRoundId, prevRoundId]);
+  }, [currentRoundId, prevRoundId, enableNewRoundAnimation]);
 
   // Track motherload milestones
   useEffect(() => {
-    if (!currentMotherlode) return;
+    if (!currentMotherlode || !enableMotherloadAnimation) return;
 
     if (prevMotherlode === 0) {
       // First load - just set the value
@@ -68,7 +72,7 @@ export function CelebrationAnimations({
     } else {
       setPrevMotherlode(currentMotherlode);
     }
-  }, [currentMotherlode, prevMotherlode, motherloadThreshold]);
+  }, [currentMotherlode, prevMotherlode, motherloadThreshold, enableMotherloadAnimation]);
 
   return (
     <>
@@ -84,14 +88,14 @@ export function CelebrationAnimations({
             gravity={0.25}
           />
           <div className="absolute top-1/3 left-1/2 transform -translate-x-1/2 -translate-y-1/2 text-center animate-bounce">
-            <div className="relative bg-black/80 backdrop-blur-sm border-2 border-cyan-500/50 rounded-xl px-6 py-4 shadow-2xl neon-border">
-              <div className="absolute inset-0 bg-gradient-to-br from-cyan-500/10 to-blue-500/10 rounded-xl" />
+            <div className="relative bg-black/80 backdrop-blur-sm border-2 border-cyan-500/50 rounded-lg px-4 py-2.5 shadow-2xl neon-border">
+              <div className="absolute inset-0 bg-gradient-to-br from-cyan-500/10 to-blue-500/10 rounded-lg" />
               <div className="relative z-10">
-                <h2 className="text-3xl font-black mb-1.5 bg-gradient-to-r from-cyan-400 to-blue-400 bg-clip-text text-transparent neon-text">
+                <h2 className="text-2xl font-black mb-1 bg-gradient-to-r from-cyan-400 to-blue-400 bg-clip-text text-transparent neon-text">
                   🎉 NEW ROUND! 🎉
                 </h2>
-                <p className="text-xl font-bold text-cyan-400">Round #{currentRoundId}</p>
-                <div className="mt-1.5 text-xs text-cyan-500/60 uppercase tracking-wider">Round Started</div>
+                <p className="text-lg font-bold text-cyan-400">Round #{currentRoundId}</p>
+                <div className="mt-1 text-[10px] text-cyan-500/60 uppercase tracking-wider">Round Started</div>
               </div>
             </div>
           </div>
