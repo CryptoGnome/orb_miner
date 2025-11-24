@@ -5,6 +5,7 @@
   "main": "dist/index.js",
   "scripts": {
     "setup": "npm install && cd dashboard && npm install",
+    "update": "node -e \"require('child_process').execSync(process.platform === 'win32' ? 'update.bat' : 'bash update.sh', {stdio: 'inherit'})\"",
     "start": "concurrently --names \"BOT,DASHBOARD\" --prefix-colors \"cyan,magenta\" \"npm run start:bot\" \"npm run start:dashboard\"",
     "start:bot": "ts-node src/index.ts",
     "start:dashboard": "cd dashboard && node start-dashboard.js --dev",
