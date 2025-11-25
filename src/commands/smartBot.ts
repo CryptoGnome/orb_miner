@@ -961,9 +961,9 @@ async function autoSellOrb(): Promise<void> {
     }
 
     // Check if ORB price meets minimum threshold
-    // When price-based staking is enabled, use stakingPriceThresholdUsd instead of minOrbPriceUsd
+    // When price-based staking is enabled, use priceStakingSellAboveUsd instead of minOrbPriceUsd
     const minPriceThreshold = config.priceBasedStakingEnabled
-      ? config.stakingPriceThresholdUsd
+      ? config.priceStakingSellAboveUsd
       : config.minOrbPriceUsd;
 
     if (minPriceThreshold > 0) {
@@ -975,7 +975,7 @@ async function autoSellOrb(): Promise<void> {
       }
 
       if (priceInUsd < minPriceThreshold) {
-        const thresholdSource = config.priceBasedStakingEnabled ? 'staking threshold' : 'min price';
+        const thresholdSource = config.priceBasedStakingEnabled ? 'sell-above threshold' : 'min price';
         ui.warning(`ORB price too low: $${priceInUsd.toFixed(2)} (${thresholdSource}: $${minPriceThreshold.toFixed(2)})`);
         return;
       }
@@ -1051,7 +1051,21 @@ async function autoSwapCheck(): Promise<void> {
 }
 
 /**
- * Price-based staking: Stake when price is low, unstake when price is high
+ * Price-based staking: Three-tier system
+ *
+ * Tier 1 (Accumulation): Price < STAKE_BELOW_USD
+ *   - Stake ALL available ORB (hold for the pump)
+ *
+ * Tier 2 (Hold Zone): STAKE_BELOW_USD <= Price < SELL_ABOVE_USD
+ *   - Do nothing (wait and see)
+ *
+ * Tier 3 (Sell Rewards): SELL_ABOVE_USD <= Price < TAKE_PROFIT_USD
+ *   - Sell wallet ORB (rewards, mining earnings)
+ *   - Keep staked ORB locked
+ *
+ * Tier 4 (Take Profit): Price >= TAKE_PROFIT_USD
+ *   - Unstake ALL ORB
+ *   - Sell everything (moon mode)
  */
 async function priceBasedStaking(): Promise<void> {
   try {
@@ -1068,59 +1082,32 @@ async function priceBasedStaking(): Promise<void> {
       return;
     }
 
-    logger.debug(`Price-based staking check: ORB price $${priceInUsd.toFixed(2)}, threshold $${config.stakingPriceThresholdUsd.toFixed(2)}`);
+    const { priceStakingStakeBelowUsd, priceStakingSellAboveUsd, priceStakingTakeProfitUsd } = config;
 
-    // Price below threshold: Stake ALL available ORB
-    if (priceInUsd < config.stakingPriceThresholdUsd) {
-      const balances = await getBalances();
-      const orbAvailable = balances.orb - config.minOrbToKeep;
+    logger.debug(
+      `Price-based staking check: ORB $${priceInUsd.toFixed(2)} | ` +
+      `Stake below: $${priceStakingStakeBelowUsd} | ` +
+      `Sell above: $${priceStakingSellAboveUsd} | ` +
+      `Take profit: $${priceStakingTakeProfitUsd}`
+    );
 
-      if (orbAvailable >= 0.1) { // Minimum 0.1 ORB to stake
-        ui.stake(`Price low ($${priceInUsd.toFixed(2)}): Staking ${orbAvailable.toFixed(2)} ORB...`);
-
-        if (config.dryRun) {
-          logger.info(`[DRY RUN] Would stake ${orbAvailable.toFixed(2)} ORB (price: $${priceInUsd.toFixed(2)})`);
-          return;
-        }
-
-        const instruction = await buildStakeInstruction(orbAvailable);
-        const { signature, fee: actualFee } = await sendAndConfirmTransaction([instruction], 'Price-Based Stake');
-        ui.success(`Staked ${orbAvailable.toFixed(2)} ORB at $${priceInUsd.toFixed(2)}`);
-        logger.debug(`Transaction: ${signature}`);
-
-        // Record stake transaction
-        try {
-          await recordTransaction({
-            type: 'stake',
-            signature,
-            orbAmount: orbAvailable,
-            status: 'success',
-            notes: `Price-based stake: $${priceInUsd.toFixed(2)} < $${config.stakingPriceThresholdUsd.toFixed(2)}`,
-            orbPriceUsd: priceInUsd,
-            txFeeSol: actualFee,
-          });
-        } catch (error) {
-          logger.error('Failed to record stake:', error);
-        }
-      }
-    }
-    // Price above threshold: Unstake ALL staked ORB
-    else {
+    // TIER 4: TAKE PROFIT (Price >= Take Profit Threshold)
+    // Unstake everything and let auto-swap sell it all
+    if (priceInUsd >= priceStakingTakeProfitUsd) {
       const stakeAccount = await fetchStake(getWallet().publicKey);
 
       if (stakeAccount && stakeAccount.balance.gt(new BN(0))) {
-        // Convert BN balance (in lamports) to number (in ORB)
         const unstakeAmount = stakeAccount.balance.toNumber() / 1e9;
-        ui.stake(`Price high ($${priceInUsd.toFixed(2)}): Unstaking ${unstakeAmount.toFixed(2)} ORB...`);
+        ui.stake(`🚀 TAKE PROFIT ($${priceInUsd.toFixed(2)} >= $${priceStakingTakeProfitUsd}): Unstaking ${unstakeAmount.toFixed(2)} ORB...`);
 
         if (config.dryRun) {
-          logger.info(`[DRY RUN] Would unstake ${unstakeAmount.toFixed(2)} ORB (price: $${priceInUsd.toFixed(2)})`);
+          logger.info(`[DRY RUN] Would unstake ${unstakeAmount.toFixed(2)} ORB for take profit (price: $${priceInUsd.toFixed(2)})`);
           return;
         }
 
         const instruction = await buildUnstakeInstruction(unstakeAmount);
-        const { signature, fee: actualFee } = await sendAndConfirmTransaction([instruction], 'Price-Based Unstake');
-        ui.success(`Unstaked ${unstakeAmount.toFixed(2)} ORB at $${priceInUsd.toFixed(2)} (will be sold by auto-swap)`);
+        const { signature, fee: actualFee } = await sendAndConfirmTransaction([instruction], 'Take Profit Unstake');
+        ui.success(`🎉 Unstaked ${unstakeAmount.toFixed(2)} ORB at $${priceInUsd.toFixed(2)} - TAKE PROFIT MODE!`);
         logger.debug(`Transaction: ${signature}`);
 
         // Record unstake transaction
@@ -1130,7 +1117,7 @@ async function priceBasedStaking(): Promise<void> {
             signature,
             orbAmount: unstakeAmount,
             status: 'success',
-            notes: `Price-based unstake: $${priceInUsd.toFixed(2)} > $${config.stakingPriceThresholdUsd.toFixed(2)}`,
+            notes: `Take profit unstake: $${priceInUsd.toFixed(2)} >= $${priceStakingTakeProfitUsd}`,
             orbPriceUsd: priceInUsd,
             txFeeSol: actualFee,
           });
@@ -1138,8 +1125,60 @@ async function priceBasedStaking(): Promise<void> {
           logger.error('Failed to record unstake:', error);
         }
       } else {
-        logger.debug('No staked ORB to unstake');
+        logger.debug('Take profit mode: No staked ORB to unstake (auto-swap will handle wallet ORB)');
       }
+      return; // Auto-swap will handle selling the wallet ORB
+    }
+
+    // TIER 3: SELL REWARDS (Sell Above <= Price < Take Profit)
+    // Do nothing here - auto-swap handles selling wallet ORB
+    // Staked ORB stays locked
+    if (priceInUsd >= priceStakingSellAboveUsd) {
+      logger.debug(`Sell zone: Price $${priceInUsd.toFixed(2)} >= $${priceStakingSellAboveUsd} - auto-swap will handle wallet ORB`);
+      return; // Auto-swap handles this with priceStakingSellAboveUsd threshold
+    }
+
+    // TIER 2: HOLD ZONE (Stake Below <= Price < Sell Above)
+    // Do nothing - wait and see
+    if (priceInUsd >= priceStakingStakeBelowUsd) {
+      logger.debug(`Hold zone: Price $${priceInUsd.toFixed(2)} between $${priceStakingStakeBelowUsd} and $${priceStakingSellAboveUsd} - holding`);
+      return;
+    }
+
+    // TIER 1: ACCUMULATION (Price < Stake Below)
+    // Stake ALL available ORB
+    const balances = await getBalances();
+    const orbAvailable = balances.orb - config.minOrbToKeep;
+
+    if (orbAvailable >= 0.1) { // Minimum 0.1 ORB to stake
+      ui.stake(`📥 Accumulation mode ($${priceInUsd.toFixed(2)} < $${priceStakingStakeBelowUsd}): Staking ${orbAvailable.toFixed(2)} ORB...`);
+
+      if (config.dryRun) {
+        logger.info(`[DRY RUN] Would stake ${orbAvailable.toFixed(2)} ORB (accumulation mode, price: $${priceInUsd.toFixed(2)})`);
+        return;
+      }
+
+      const instruction = await buildStakeInstruction(orbAvailable);
+      const { signature, fee: actualFee } = await sendAndConfirmTransaction([instruction], 'Accumulation Stake');
+      ui.success(`Staked ${orbAvailable.toFixed(2)} ORB at $${priceInUsd.toFixed(2)} (accumulation mode)`);
+      logger.debug(`Transaction: ${signature}`);
+
+      // Record stake transaction
+      try {
+        await recordTransaction({
+          type: 'stake',
+          signature,
+          orbAmount: orbAvailable,
+          status: 'success',
+          notes: `Accumulation stake: $${priceInUsd.toFixed(2)} < $${priceStakingStakeBelowUsd}`,
+          orbPriceUsd: priceInUsd,
+          txFeeSol: actualFee,
+        });
+      } catch (error) {
+        logger.error('Failed to record stake:', error);
+      }
+    } else {
+      logger.debug(`Accumulation mode: Not enough ORB to stake (have ${balances.orb.toFixed(2)}, need 0.1 after keeping ${config.minOrbToKeep})`);
     }
   } catch (error) {
     logger.error('Price-based staking failed:', error);

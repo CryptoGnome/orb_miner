@@ -165,9 +165,12 @@ export async function initializeDefaultSettings(): Promise<void> {
       { key: 'AUTO_STAKE_ENABLED', value: 'false', type: 'boolean', description: 'Enable auto-stake' },
       { key: 'STAKE_ORB_THRESHOLD', value: '50', type: 'number', description: 'ORB threshold for staking' },
 
-      // Smart Bot - Price-Based Staking
+      // Smart Bot - Price-Based Staking (Three-Tier System)
       { key: 'PRICE_BASED_STAKING_ENABLED', value: 'false', type: 'boolean', description: 'Enable price-based staking (overrides amount-based staking & MIN_ORB_PRICE_USD)' },
-      { key: 'STAKING_PRICE_THRESHOLD_USD', value: '30', type: 'number', description: 'Price threshold: stake if below, unstake+sell if above (overrides MIN_ORB_PRICE_USD when enabled)' },
+      { key: 'STAKING_PRICE_THRESHOLD_USD', value: '30', type: 'number', description: '[LEGACY] Price threshold: stake if below, unstake+sell if above' },
+      { key: 'PRICE_STAKING_STAKE_BELOW_USD', value: '25', type: 'number', description: 'Stake ORB when price is below this threshold (accumulation mode)' },
+      { key: 'PRICE_STAKING_SELL_ABOVE_USD', value: '40', type: 'number', description: 'Sell rewards/wallet ORB when price is above this (keeps staked ORB)' },
+      { key: 'PRICE_STAKING_TAKE_PROFIT_USD', value: '80', type: 'number', description: 'Unstake and sell ALL ORB when price hits this (take profit threshold)' },
       { key: 'PRICE_STAKING_CHECK_INTERVAL_MS', value: '120000', type: 'number', description: 'Price-based staking check interval (ms)' },
 
       // Legacy Auto-Deploy Settings

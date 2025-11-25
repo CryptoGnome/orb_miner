@@ -72,9 +72,12 @@ export interface Config {
   autoStakeEnabled: boolean;
   stakeOrbThreshold: number;
 
-  // Smart Bot - Price-Based Staking (overrides amount-based when enabled)
+  // Smart Bot - Price-Based Staking (Three-Tier System - overrides amount-based when enabled)
   priceBasedStakingEnabled: boolean;
-  stakingPriceThresholdUsd: number;
+  stakingPriceThresholdUsd: number; // Legacy - kept for backwards compatibility
+  priceStakingStakeBelowUsd: number; // Stake when price below this
+  priceStakingSellAboveUsd: number; // Sell rewards when price above this (keep staked)
+  priceStakingTakeProfitUsd: number; // Unstake and sell ALL when price hits this
   priceStakingCheckIntervalMs: number;
 
   // Auto-Deploy Settings (legacy)
@@ -190,9 +193,12 @@ export async function loadConfigWithDB(): Promise<Config> {
       autoStakeEnabled: getBooleanSetting(dbSettings, 'AUTO_STAKE_ENABLED', false),
       stakeOrbThreshold: getNumberSetting(dbSettings, 'STAKE_ORB_THRESHOLD', 50),
 
-      // Smart Bot - Price-Based Staking
+      // Smart Bot - Price-Based Staking (Three-Tier System)
       priceBasedStakingEnabled: getBooleanSetting(dbSettings, 'PRICE_BASED_STAKING_ENABLED', false),
-      stakingPriceThresholdUsd: getNumberSetting(dbSettings, 'STAKING_PRICE_THRESHOLD_USD', 30),
+      stakingPriceThresholdUsd: getNumberSetting(dbSettings, 'STAKING_PRICE_THRESHOLD_USD', 30), // Legacy
+      priceStakingStakeBelowUsd: getNumberSetting(dbSettings, 'PRICE_STAKING_STAKE_BELOW_USD', 25),
+      priceStakingSellAboveUsd: getNumberSetting(dbSettings, 'PRICE_STAKING_SELL_ABOVE_USD', 40),
+      priceStakingTakeProfitUsd: getNumberSetting(dbSettings, 'PRICE_STAKING_TAKE_PROFIT_USD', 80),
       priceStakingCheckIntervalMs: getNumberSetting(dbSettings, 'PRICE_STAKING_CHECK_INTERVAL_MS', 120000),
 
       // Auto-Deploy Settings (legacy)

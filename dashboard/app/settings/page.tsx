@@ -524,6 +524,22 @@ export default function SettingsPage() {
               ) {
                 return localValues['CLAIM_STRATEGY'] === 'auto';
               }
+              // Show price-based staking thresholds only when PRICE_BASED_STAKING_ENABLED = true
+              if (
+                setting.key === 'PRICE_STAKING_STAKE_BELOW_USD' ||
+                setting.key === 'PRICE_STAKING_SELL_ABOVE_USD' ||
+                setting.key === 'PRICE_STAKING_TAKE_PROFIT_USD' ||
+                setting.key === 'PRICE_STAKING_CHECK_INTERVAL_MS'
+              ) {
+                return localValues['PRICE_BASED_STAKING_ENABLED'] === true;
+              }
+              // Hide amount-based staking settings when PRICE_BASED_STAKING_ENABLED = true
+              if (
+                setting.key === 'AUTO_STAKE_ENABLED' ||
+                setting.key === 'STAKE_ORB_THRESHOLD'
+              ) {
+                return localValues['PRICE_BASED_STAKING_ENABLED'] !== true;
+              }
               // All other settings are always visible
               return true;
             };
