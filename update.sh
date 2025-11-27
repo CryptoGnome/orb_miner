@@ -21,17 +21,21 @@ rm -rf .next
 cd ..
 
 # Rebuild TypeScript
-echo "🔨 Building TypeScript..."
+echo "🔨 Building bot..."
 npm run build
+
+# Rebuild dashboard
+echo "🔨 Building dashboard..."
+npm run build:dashboard
 
 # Check if PM2 is running the processes
 if command -v pm2 &> /dev/null; then
     echo "🔄 Checking PM2 processes..."
 
     # Restart bot if it's running
-    if pm2 list | grep -q "orb-miner"; then
-        echo "🔄 Restarting orb-miner..."
-        pm2 restart orb-miner
+    if pm2 list | grep -q "orb-bot"; then
+        echo "🔄 Restarting orb-bot..."
+        pm2 restart orb-bot
     fi
 
     # Restart dashboard if it's running
@@ -45,5 +49,5 @@ echo ""
 echo "✅ Update complete!"
 echo ""
 echo "If you're not using PM2, restart your processes manually:"
-echo "  - Bot: npm run bot"
-echo "  - Dashboard: cd dashboard && npm run dev"
+echo "  - Bot: npm start"
+echo "  - Dashboard: npm run start:dashboard"
