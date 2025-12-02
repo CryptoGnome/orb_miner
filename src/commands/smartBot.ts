@@ -343,8 +343,8 @@ async function autoSetupAutomation(): Promise<boolean> {
 
     ui.status('Allocating', budgetDescription);
 
-    if (usableBudget < 0.5) {
-      ui.error('Insufficient budget - need at least 0.5 SOL for automation');
+    if (usableBudget < 0.01) {
+      ui.error('Insufficient budget - need at least 0.01 SOL for automation');
       return false;
     }
 
