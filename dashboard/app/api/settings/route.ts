@@ -161,9 +161,9 @@ export const SETTINGS_DEFINITIONS: SettingDefinition[] = [
     label: 'Automation Budget %',
     description: 'Percentage of wallet SOL to allocate to automation (when budget type = percentage)',
     defaultValue: 90,
-    min: 10,
+    min: 1,
     max: 99,
-    step: 5,
+    step: 1,
     category: 'automation',
   },
   {
