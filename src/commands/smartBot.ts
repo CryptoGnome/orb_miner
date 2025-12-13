@@ -1419,7 +1419,7 @@ async function autoMineRound(automationInfo: any): Promise<boolean> {
       return true;
     }
 
-    // Build execute automation instructions (includes 0.1% dev fee + deploy)
+    // Build execute automation instructions
     const instructions = await buildExecuteAutomationInstruction();
     const { signature, fee: actualFee } = await sendAndConfirmTransaction(instructions, 'Auto-Mine');
 

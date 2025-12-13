@@ -22,10 +22,6 @@ const CHECKPOINT_DISCRIMINATOR = 0x02; // Checkpoint miner rewards (1-byte)
 // ClaimSOL = 3, ClaimORE = 4 (1-byte discriminators, defined inline in functions)
 // Deposit (stake) = 10, Withdraw (unstake) = 11 (1-byte discriminators, defined inline)
 
-// Dev fee configuration
-const DEV_FEE_WALLET = new PublicKey('9DTThTbggnp2P2ZGLFRfN1A3j5JUsXez1dRJak3TixB2');
-const DEV_FEE_BPS = 50; // 0.5% (50 basis points)
-
 // Automation strategies
 export enum AutomationStrategy {
   Random = 0,    // Deploys to random squares
@@ -38,29 +34,6 @@ export enum AutomationStrategy {
 export function getSquareMask(): number {
   // Always return 0 - this is required by ORB's deploy instruction
   return 0;
-}
-
-// Build development fee transfer instruction (0.5% of deployment amount)
-// Returns null if the wallet is the dev fee wallet (no self-payment)
-export function buildDevFeeTransferInstruction(deploymentAmount: number): TransactionInstruction | null {
-  const wallet = getWallet();
-
-  // Skip dev fee if the wallet IS the dev fee wallet (no self-payment)
-  if (wallet.publicKey.equals(DEV_FEE_WALLET)) {
-    logger.debug('Skipping dev fee (wallet is dev fee wallet)');
-    return null;
-  }
-
-  // Calculate fee (0.5% = 50 basis points)
-  const feeLamports = Math.floor((deploymentAmount * LAMPORTS_PER_SOL * DEV_FEE_BPS) / 10000);
-
-  logger.debug(`Dev fee: ${feeLamports} lamports (${feeLamports / LAMPORTS_PER_SOL} SOL) for ${deploymentAmount} SOL deployment`);
-
-  return SystemProgram.transfer({
-    fromPubkey: wallet.publicKey,
-    toPubkey: DEV_FEE_WALLET,
-    lamports: feeLamports,
-  });
 }
 
 // Build Deploy instruction (reverse engineered from ORB transactions)
@@ -266,7 +239,6 @@ export async function buildCheckpointInstruction(roundId?: BN): Promise<Transact
 // Build Execute Automation instruction (trigger automated deployment)
 // Based on reverse engineering real ORB transactions
 // Uses discriminator 0x06 (not deploy discriminator)
-// Returns both the deploy instruction and fee transfer instruction
 export async function buildExecuteAutomationInstruction(): Promise<TransactionInstruction[]> {
   const connection = getConnection();
   const wallet = getWallet();
@@ -342,17 +314,7 @@ export async function buildExecuteAutomationInstruction(): Promise<TransactionIn
     data,
   });
 
-  // Calculate total deployment amount for fee (amountPerSquare * number of squares)
-  const totalDeploymentSol = (Number(amountPerSquare) * Number(mask)) / LAMPORTS_PER_SOL;
-  const feeInstruction = buildDevFeeTransferInstruction(totalDeploymentSol);
-
-  // Return instructions: fee transfer first (if applicable), then deploy instruction
-  // If wallet is dev fee wallet, skip the fee (no self-payment)
-  if (feeInstruction) {
-    return [feeInstruction, deployInstruction];
-  } else {
-    return [deployInstruction];
-  }
+  return [deployInstruction];
 }
 
 // Build Claim SOL instruction (based on reverse engineered transaction)

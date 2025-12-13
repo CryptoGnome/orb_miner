@@ -725,7 +725,6 @@ export interface ImprovedPnLSummary {
   // Expenses (what you spent)
   actualFeesPaid: number; // From checkpoint tracking
   estimatedTxFees: number; // Based on transaction count
-  estimatedDevFees: number; // 0.1% of deploys
   totalExpenses: number;
 
   // Profit calculation
@@ -782,12 +781,11 @@ export async function getImprovedPnLSummary(
   `);
   const totalDeployTxCount = deployCount?.count || 0;
   const estimatedTxFees = totalDeployTxCount * 0.0085; // ~0.0085 SOL per tx (priority + base fees)
-  const estimatedDevFees = fees.deployTotal * 0.001; // 0.1% dev fee
 
   // Calculate totals
   const totalCapital = currentWalletSol + currentAutomationSol + currentPendingSol;
   const totalIncome = solRewardsClaimed + orbSwappedToSol + orbValueInSol;
-  const totalExpenses = actualFeesPaid + estimatedTxFees + estimatedDevFees;
+  const totalExpenses = actualFeesPaid + estimatedTxFees;
 
   // Calculate profit
   const netProfitSol = solRewardsClaimed + orbSwappedToSol - totalExpenses;
@@ -846,7 +844,6 @@ export async function getImprovedPnLSummary(
     // Expenses
     actualFeesPaid,
     estimatedTxFees,
-    estimatedDevFees,
     totalExpenses,
 
     // Profit

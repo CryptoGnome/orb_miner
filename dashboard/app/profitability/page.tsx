@@ -181,12 +181,6 @@ export default function Profitability() {
                     {(pnl?.breakdown?.expenses?.protocolFees || 0).toFixed(4)} SOL
                   </Badge>
                 </div>
-                <div className="flex justify-between items-center py-2">
-                  <span className="text-sm text-muted-foreground">Dev Fees (0.5%)</span>
-                  <Badge variant="outline" className="bg-red-500/10 text-red-400 border-red-500/30 font-mono text-xs">
-                    {(pnl?.breakdown?.expenses?.devFees || 0).toFixed(4)} SOL
-                  </Badge>
-                </div>
               </TabsContent>
 
               {/* Holdings Tab */}

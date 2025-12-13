@@ -167,7 +167,6 @@ export interface DetailedBreakdown {
     deployedSol: number; // Total SOL deployed (automation_setup - automation_close)
     transactionFees: number; // Sum of tx_fee_sol
     protocolFees: number; // Sum of protocol_fee_sol (10% deploy fee)
-    devFees: number; // 0.5% dev fee on deploys
     totalExpenses: number; // Sum of all expenses
   };
 
@@ -240,9 +239,6 @@ export async function getDetailedBreakdown(): Promise<DetailedBreakdown> {
     WHERE status = 'success'
   `);
 
-  // Calculate dev fees (0.5% of actual deploy amounts, not automation setup)
-  const devFees = (expensesQuery?.actual_deploys || 0) * 0.005;
-
   // Get activity stats
   const statsQuery = await getQuery<{
     rounds: number;
@@ -275,11 +271,9 @@ export async function getDetailedBreakdown(): Promise<DetailedBreakdown> {
     deployedSol: expensesQuery?.deployed_sol || 0,
     transactionFees: expensesQuery?.transaction_fees || 0,
     protocolFees: expensesQuery?.protocol_fees || 0,
-    devFees,
     // Total expenses = only actual fees, NOT deployed capital
     totalExpenses: (expensesQuery?.transaction_fees || 0) +
-                   (expensesQuery?.protocol_fees || 0) +
-                   devFees,
+                   (expensesQuery?.protocol_fees || 0),
   };
 
   const stats = {

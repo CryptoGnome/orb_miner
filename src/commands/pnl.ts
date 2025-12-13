@@ -164,7 +164,6 @@ export async function pnlCommand(): Promise<void> {
     ui.status('Capital Deployed', `${formatSol(pnl.breakdown.expenses.deployedSol)} SOL`);
     ui.status('Transaction Fees', `${formatSol(pnl.breakdown.expenses.transactionFees)} SOL`);
     ui.status('Protocol Fees (10%)', `${formatSol(pnl.breakdown.expenses.protocolFees)} SOL`);
-    ui.status('Dev Fees (0.5%)', `${formatSol(pnl.breakdown.expenses.devFees)} SOL`);
     ui.status('💸 Total Expenses', `${formatSol(pnl.breakdown.expenses.totalExpenses)} SOL`);
     ui.blank();
 
