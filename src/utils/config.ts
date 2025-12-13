@@ -217,7 +217,7 @@ export async function loadConfigWithDB(): Promise<Config> {
       minOrbSwapAmount: getNumberSetting(dbSettings, 'MIN_ORB_SWAP_AMOUNT', 0.1),
       slippageBps: getNumberSetting(dbSettings, 'SLIPPAGE_BPS', 50),
       swapPriorityFeeLamports: getPriorityFee('SWAP_PRIORITY_FEE_LAMPORTS', 100000),
-      jupiterApiUrl: getSettingValue(dbSettings, 'JUPITER_API_URL', 'https://api.jup.ag/v6'),
+      jupiterApiUrl: getSettingValue(dbSettings, 'JUPITER_API_URL', 'https://api.jup.ag/swap/v1'),
       jupiterApiKey: getSettingValue(dbSettings, 'JUPITER_API_KEY', ''),
 
       // Priority Fee Settings (Dynamic Fee Optimization)

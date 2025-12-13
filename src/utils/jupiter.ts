@@ -13,8 +13,7 @@ const USDC_MINT = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v'; // USDC
 
 // Fallback endpoints if primary fails (migrated to new api.jup.ag)
 const FALLBACK_ENDPOINTS = [
-  'https://api.jup.ag/v6',
-  'https://quote-api.jup.ag/v6',
+  'https://api.jup.ag/swap/v1',
 ];
 
 let workingEndpoint: string | null = null;
