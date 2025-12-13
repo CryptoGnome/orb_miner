@@ -11,11 +11,10 @@ import { estimatePriorityFee, parseFeeLevel, COMPUTE_UNIT_LIMITS } from './feeEs
 const WSOL_MINT = 'So11111111111111111111111111111111111111112'; // Wrapped SOL
 const USDC_MINT = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v'; // USDC
 
-// Fallback endpoints if primary fails (use /swap/v1 for lite-api)
+// Fallback endpoints if primary fails (migrated to new api.jup.ag)
 const FALLBACK_ENDPOINTS = [
-  'https://lite-api.jup.ag/swap/v1',
-  'https://quote-api.jup.ag/v6',
   'https://api.jup.ag/v6',
+  'https://quote-api.jup.ag/v6',
 ];
 
 let workingEndpoint: string | null = null;
@@ -225,13 +224,22 @@ async function tryGetQuote(
 ): Promise<JupiterQuote | null> {
   try {
     const quoteUrl = `${endpoint}/quote`;
+
+    // Build headers with API key if available
+    const headers: Record<string, string> = {
+      'Accept': 'application/json',
+      'User-Agent': 'ORB-Mining-Bot/1.0',
+    };
+
+    // Add API key if configured (required for api.jup.ag)
+    if (config.jupiterApiKey) {
+      headers['x-api-key'] = config.jupiterApiKey;
+    }
+
     const response = await axios.get(quoteUrl, {
       params,
       timeout: 20000, // Increased from 15s to 20s for better reliability
-      headers: {
-        'Accept': 'application/json',
-        'User-Agent': 'ORB-Mining-Bot/1.0', // Identify as bot to avoid rate limiting
-      },
+      headers,
     });
 
     if (response.data && response.data.outAmount) {
@@ -375,6 +383,16 @@ export async function executeSwap(quote: JupiterQuote): Promise<string | null> {
       }
     }
 
+    // Build headers with API key if available
+    const swapHeaders: Record<string, string> = {
+      'Content-Type': 'application/json',
+    };
+
+    // Add API key if configured (required for api.jup.ag)
+    if (config.jupiterApiKey) {
+      swapHeaders['x-api-key'] = config.jupiterApiKey;
+    }
+
     const swapResponse = await axios.post<JupiterSwapResponse>(
       `${swapEndpoint}/swap`,
       {
@@ -386,9 +404,7 @@ export async function executeSwap(quote: JupiterQuote): Promise<string | null> {
       },
       {
         timeout: 30000,
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: swapHeaders,
       }
     );
 

@@ -188,7 +188,8 @@ export async function initializeDefaultSettings(): Promise<void> {
       { key: 'MIN_ORB_SWAP_AMOUNT', value: '0.1', type: 'number', description: 'Minimum ORB swap amount' },
       { key: 'SLIPPAGE_BPS', value: '50', type: 'number', description: 'Slippage tolerance (bps)' },
       { key: 'SWAP_PRIORITY_FEE_LAMPORTS', value: '100000', type: 'string', description: 'Swap priority fee (auto or number)' },
-      { key: 'JUPITER_API_URL', value: 'https://quote-api.jup.ag/v6', type: 'string', description: 'Jupiter API URL' },
+      { key: 'JUPITER_API_URL', value: 'https://api.jup.ag/v6', type: 'string', description: 'Jupiter API URL (new: api.jup.ag)' },
+      { key: 'JUPITER_API_KEY', value: '', type: 'string', description: 'Jupiter API key (get free at https://station.jup.ag/api-keys)', encrypt: false },
 
       // Priority Fee Settings
       { key: 'PRIORITY_FEE_LEVEL', value: 'medium', type: 'string', description: 'Priority fee level (low/medium/high/veryHigh)' },
