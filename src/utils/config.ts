@@ -1,13 +1,13 @@
-import { PublicKey } from '@solana/web3.js';
-import logger from './logger';
+import { PublicKey } from "@solana/web3.js";
+import logger from "./logger";
 import {
   loadSettingsFromDB,
   getSettingValue,
   getNumberSetting,
   getBooleanSetting,
-  initializeDefaultSettings
-} from './settingsLoader';
-import { DeploymentAmountStrategy, ClaimStrategy } from '../types/strategies';
+  initializeDefaultSettings,
+} from "./settingsLoader";
+import { DeploymentAmountStrategy, ClaimStrategy } from "../types/strategies";
 
 export interface Config {
   // Wallet & Network
@@ -19,7 +19,7 @@ export interface Config {
   network: string;
 
   // Bot Action
-  botAction: 'auto-deploy' | 'deploy' | 'claim' | 'stake' | 'swap' | 'query';
+  botAction: "auto-deploy" | "deploy" | "claim" | "stake" | "swap" | "query";
   miningEnabled: boolean;
 
   // Deployment Settings
@@ -35,7 +35,7 @@ export interface Config {
   estimatedCompetitionMultiplier: number;
 
   // Smart Bot - Automation Account Settings
-  budgetType: 'percentage' | 'fixed';
+  budgetType: "percentage" | "fixed";
   initialAutomationBudgetPct: number;
   fixedBudgetAmount: number;
 
@@ -59,7 +59,7 @@ export interface Config {
   autoClaimEnabled: boolean;
   claimThresholdSol: number;
   claimThresholdOrb: number;
-  claimType: 'sol' | 'orb' | 'both';
+  claimType: "sol" | "orb" | "both";
   claimFromMining: boolean;
   claimFromStaking: boolean;
 
@@ -94,7 +94,7 @@ export interface Config {
   minOrbToKeep: number;
   minOrbSwapAmount: number;
   slippageBps: number;
-  swapPriorityFeeLamports: number | 'auto';
+  swapPriorityFeeLamports: number | "auto";
   jupiterApiUrl: string;
 
   // Priority Fee Settings (Dynamic Fee Optimization)
@@ -122,9 +122,12 @@ export async function loadConfigWithDB(): Promise<Config> {
     // Load settings from database
     const dbSettings = await loadSettingsFromDB();
 
-    function getPriorityFee(key: string, defaultValue: number | 'auto'): number | 'auto' {
+    function getPriorityFee(
+      key: string,
+      defaultValue: number | "auto"
+    ): number | "auto" {
       const value = getSettingValue(dbSettings, key, String(defaultValue));
-      if (value.toLowerCase() === 'auto') return 'auto';
+      if (value.toLowerCase() === "auto") return "auto";
       const numValue = parseInt(value);
       return isNaN(numValue) ? defaultValue : numValue;
     }
@@ -132,111 +135,308 @@ export async function loadConfigWithDB(): Promise<Config> {
     const config: Config = {
       // Wallet & Network
       // Note: PRIVATE_KEY may be empty on first run - wizard will handle this
-      privateKey: getSettingValue(dbSettings, 'PRIVATE_KEY', ''),
-      rpcEndpoint: getSettingValue(dbSettings, 'RPC_ENDPOINT', 'https://api.mainnet-beta.solana.com'),
-      orbProgramId: new PublicKey(getSettingValue(dbSettings, 'ORB_PROGRAM_ID', 'boreXQWsKpsJz5RR9BMtN8Vk4ndAk23sutj8spWYhwk')),
-      orbTokenMint: new PublicKey(getSettingValue(dbSettings, 'ORB_TOKEN_MINT', 'orebyr4mDiPDVgnfqvF5xiu5gKnh94Szuz8dqgNqdJn')),
-      orbFeeCollector: new PublicKey(getSettingValue(dbSettings, 'ORB_FEE_COLLECTOR', '9DTThTbggnp2P2ZGLFRfN1A3j5JUsXez1dRJak3TixB2')),
-      network: getSettingValue(dbSettings, 'NETWORK', 'mainnet-beta'),
+      privateKey: getSettingValue(dbSettings, "PRIVATE_KEY", ""),
+      rpcEndpoint: getSettingValue(
+        dbSettings,
+        "RPC_ENDPOINT",
+        "https://api.mainnet-beta.solana.com"
+      ),
+      orbProgramId: new PublicKey(
+        getSettingValue(
+          dbSettings,
+          "ORB_PROGRAM_ID",
+          "boreXQWsKpsJz5RR9BMtN8Vk4ndAk23sutj8spWYhwk"
+        )
+      ),
+      orbTokenMint: new PublicKey(
+        getSettingValue(
+          dbSettings,
+          "ORB_TOKEN_MINT",
+          "orebyr4mDiPDVgnfqvF5xiu5gKnh94Szuz8dqgNqdJn"
+        )
+      ),
+      orbFeeCollector: new PublicKey(
+        getSettingValue(
+          dbSettings,
+          "ORB_FEE_COLLECTOR",
+          "9DTThTbggnp2P2ZGLFRfN1A3j5JUsXez1dRJak3TixB2"
+        )
+      ),
+      network: getSettingValue(dbSettings, "NETWORK", "mainnet-beta"),
 
       // Bot Action
-      botAction: getSettingValue(dbSettings, 'BOT_ACTION', 'auto-deploy') as Config['botAction'],
-      miningEnabled: getBooleanSetting(dbSettings, 'MINING_ENABLED', false),
+      botAction: getSettingValue(
+        dbSettings,
+        "BOT_ACTION",
+        "auto-deploy"
+      ) as Config["botAction"],
+      miningEnabled: getBooleanSetting(dbSettings, "MINING_ENABLED", false),
 
       // Deployment Settings
-      deployStrategy: getSettingValue(dbSettings, 'DEPLOY_STRATEGY', 'all'),
-      solPerDeployment: getNumberSetting(dbSettings, 'SOL_PER_DEPLOYMENT', 0.01),
-      motherloadThreshold: getNumberSetting(dbSettings, 'MOTHERLOAD_THRESHOLD', 100),
-      checkRoundIntervalMs: getNumberSetting(dbSettings, 'CHECK_ROUND_INTERVAL_MS', 10000),
-      minSolForDeployment: getNumberSetting(dbSettings, 'MIN_SOL_FOR_DEPLOYMENT', 0.3),
+      deployStrategy: getSettingValue(dbSettings, "DEPLOY_STRATEGY", "all"),
+      solPerDeployment: getNumberSetting(
+        dbSettings,
+        "SOL_PER_DEPLOYMENT",
+        0.01
+      ),
+      motherloadThreshold: getNumberSetting(
+        dbSettings,
+        "MOTHERLOAD_THRESHOLD",
+        100
+      ),
+      checkRoundIntervalMs: getNumberSetting(
+        dbSettings,
+        "CHECK_ROUND_INTERVAL_MS",
+        10000
+      ),
+      minSolForDeployment: getNumberSetting(
+        dbSettings,
+        "MIN_SOL_FOR_DEPLOYMENT",
+        0.3
+      ),
 
       // Production Cost Analysis
-      enableProductionCostCheck: getBooleanSetting(dbSettings, 'ENABLE_PRODUCTION_COST_CHECK', true),
-      minExpectedValue: getNumberSetting(dbSettings, 'MIN_EXPECTED_VALUE', 0),
-      estimatedCompetitionMultiplier: getNumberSetting(dbSettings, 'ESTIMATED_COMPETITION_MULTIPLIER', 10),
+      enableProductionCostCheck: getBooleanSetting(
+        dbSettings,
+        "ENABLE_PRODUCTION_COST_CHECK",
+        true
+      ),
+      minExpectedValue: getNumberSetting(dbSettings, "MIN_EXPECTED_VALUE", 0),
+      estimatedCompetitionMultiplier: getNumberSetting(
+        dbSettings,
+        "ESTIMATED_COMPETITION_MULTIPLIER",
+        10
+      ),
 
       // Smart Bot - Automation Account Settings
-      budgetType: (getSettingValue(dbSettings, 'BUDGET_TYPE', 'percentage') as 'percentage' | 'fixed'),
-      initialAutomationBudgetPct: getNumberSetting(dbSettings, 'INITIAL_AUTOMATION_BUDGET_PCT', 90),
-      fixedBudgetAmount: getNumberSetting(dbSettings, 'FIXED_BUDGET_AMOUNT', 1.0),
+      budgetType: getSettingValue(dbSettings, "BUDGET_TYPE", "percentage") as
+        | "percentage"
+        | "fixed",
+      initialAutomationBudgetPct: getNumberSetting(
+        dbSettings,
+        "INITIAL_AUTOMATION_BUDGET_PCT",
+        90
+      ),
+      fixedBudgetAmount: getNumberSetting(
+        dbSettings,
+        "FIXED_BUDGET_AMOUNT",
+        1.0
+      ),
 
       // Deployment Amount Strategy
-      deploymentAmountStrategy: getSettingValue(dbSettings, 'DEPLOYMENT_AMOUNT_STRATEGY', 'auto') as DeploymentAmountStrategy,
-      manualAmountPerRound: getNumberSetting(dbSettings, 'MANUAL_AMOUNT_PER_ROUND', 0.01),
-      targetRounds: getNumberSetting(dbSettings, 'TARGET_ROUNDS', 100),
-      budgetPercentagePerRound: getNumberSetting(dbSettings, 'BUDGET_PERCENTAGE_PER_ROUND', 1.0),
+      deploymentAmountStrategy: getSettingValue(
+        dbSettings,
+        "DEPLOYMENT_AMOUNT_STRATEGY",
+        "auto"
+      ) as DeploymentAmountStrategy,
+      manualAmountPerRound: getNumberSetting(
+        dbSettings,
+        "MANUAL_AMOUNT_PER_ROUND",
+        0.01
+      ),
+      targetRounds: getNumberSetting(dbSettings, "TARGET_ROUNDS", 100),
+      budgetPercentagePerRound: getNumberSetting(
+        dbSettings,
+        "BUDGET_PERCENTAGE_PER_ROUND",
+        1.0
+      ),
 
       // Claim Strategy
-      claimStrategy: getSettingValue(dbSettings, 'CLAIM_STRATEGY', 'auto') as ClaimStrategy,
+      claimStrategy: getSettingValue(
+        dbSettings,
+        "CLAIM_STRATEGY",
+        "auto"
+      ) as ClaimStrategy,
 
       // Smart Bot - Auto-Claim Thresholds
-      autoClaimSolThreshold: getNumberSetting(dbSettings, 'AUTO_CLAIM_SOL_THRESHOLD', 0.1),
-      autoClaimOrbThreshold: getNumberSetting(dbSettings, 'AUTO_CLAIM_ORB_THRESHOLD', 1.0),
-      autoClaimStakingOrbThreshold: getNumberSetting(dbSettings, 'AUTO_CLAIM_STAKING_ORB_THRESHOLD', 0.5),
-      checkRewardsIntervalMs: getNumberSetting(dbSettings, 'CHECK_REWARDS_INTERVAL_MS', 300000),
-      checkStakingRewardsIntervalMs: getNumberSetting(dbSettings, 'CHECK_STAKING_REWARDS_INTERVAL_MS', 600000),
+      autoClaimSolThreshold: getNumberSetting(
+        dbSettings,
+        "AUTO_CLAIM_SOL_THRESHOLD",
+        0.1
+      ),
+      autoClaimOrbThreshold: getNumberSetting(
+        dbSettings,
+        "AUTO_CLAIM_ORB_THRESHOLD",
+        1.0
+      ),
+      autoClaimStakingOrbThreshold: getNumberSetting(
+        dbSettings,
+        "AUTO_CLAIM_STAKING_ORB_THRESHOLD",
+        0.5
+      ),
+      checkRewardsIntervalMs: getNumberSetting(
+        dbSettings,
+        "CHECK_REWARDS_INTERVAL_MS",
+        300000
+      ),
+      checkStakingRewardsIntervalMs: getNumberSetting(
+        dbSettings,
+        "CHECK_STAKING_REWARDS_INTERVAL_MS",
+        600000
+      ),
 
       // Claim Settings (legacy)
-      autoClaimEnabled: getBooleanSetting(dbSettings, 'AUTO_CLAIM_ENABLED', true),
-      claimThresholdSol: getNumberSetting(dbSettings, 'CLAIM_THRESHOLD_SOL', 1.0),
-      claimThresholdOrb: getNumberSetting(dbSettings, 'CLAIM_THRESHOLD_ORB', 100),
-      claimType: getSettingValue(dbSettings, 'CLAIM_TYPE', 'both') as Config['claimType'],
-      claimFromMining: getBooleanSetting(dbSettings, 'CLAIM_FROM_MINING', true),
-      claimFromStaking: getBooleanSetting(dbSettings, 'CLAIM_FROM_STAKING', true),
+      autoClaimEnabled: getBooleanSetting(
+        dbSettings,
+        "AUTO_CLAIM_ENABLED",
+        true
+      ),
+      claimThresholdSol: getNumberSetting(
+        dbSettings,
+        "CLAIM_THRESHOLD_SOL",
+        1.0
+      ),
+      claimThresholdOrb: getNumberSetting(
+        dbSettings,
+        "CLAIM_THRESHOLD_ORB",
+        100
+      ),
+      claimType: getSettingValue(
+        dbSettings,
+        "CLAIM_TYPE",
+        "both"
+      ) as Config["claimType"],
+      claimFromMining: getBooleanSetting(dbSettings, "CLAIM_FROM_MINING", true),
+      claimFromStaking: getBooleanSetting(
+        dbSettings,
+        "CLAIM_FROM_STAKING",
+        true
+      ),
 
       // Smart Bot - Auto-Swap Settings
-      autoSwapEnabled: getBooleanSetting(dbSettings, 'AUTO_SWAP_ENABLED', true),
-      walletOrbSwapThreshold: getNumberSetting(dbSettings, 'WALLET_ORB_SWAP_THRESHOLD', 0.1),
-      minOrbPriceUsd: getNumberSetting(dbSettings, 'MIN_ORB_PRICE_USD', 30),
+      autoSwapEnabled: getBooleanSetting(dbSettings, "AUTO_SWAP_ENABLED", true),
+      walletOrbSwapThreshold: getNumberSetting(
+        dbSettings,
+        "WALLET_ORB_SWAP_THRESHOLD",
+        0.1
+      ),
+      minOrbPriceUsd: getNumberSetting(dbSettings, "MIN_ORB_PRICE_USD", 30),
 
       // Smart Bot - Auto-Stake Settings
-      autoStakeEnabled: getBooleanSetting(dbSettings, 'AUTO_STAKE_ENABLED', false),
-      stakeOrbThreshold: getNumberSetting(dbSettings, 'STAKE_ORB_THRESHOLD', 50),
+      autoStakeEnabled: getBooleanSetting(
+        dbSettings,
+        "AUTO_STAKE_ENABLED",
+        false
+      ),
+      stakeOrbThreshold: getNumberSetting(
+        dbSettings,
+        "STAKE_ORB_THRESHOLD",
+        50
+      ),
 
       // Smart Bot - Price-Based Staking (Three-Tier System)
-      priceBasedStakingEnabled: getBooleanSetting(dbSettings, 'PRICE_BASED_STAKING_ENABLED', false),
-      stakingPriceThresholdUsd: getNumberSetting(dbSettings, 'STAKING_PRICE_THRESHOLD_USD', 30), // Legacy
-      priceStakingStakeBelowUsd: getNumberSetting(dbSettings, 'PRICE_STAKING_STAKE_BELOW_USD', 25),
-      priceStakingSellAboveUsd: getNumberSetting(dbSettings, 'PRICE_STAKING_SELL_ABOVE_USD', 40),
-      priceStakingTakeProfitUsd: getNumberSetting(dbSettings, 'PRICE_STAKING_TAKE_PROFIT_USD', 80),
-      priceStakingCheckIntervalMs: getNumberSetting(dbSettings, 'PRICE_STAKING_CHECK_INTERVAL_MS', 120000),
+      priceBasedStakingEnabled: getBooleanSetting(
+        dbSettings,
+        "PRICE_BASED_STAKING_ENABLED",
+        false
+      ),
+      stakingPriceThresholdUsd: getNumberSetting(
+        dbSettings,
+        "STAKING_PRICE_THRESHOLD_USD",
+        30
+      ), // Legacy
+      priceStakingStakeBelowUsd: getNumberSetting(
+        dbSettings,
+        "PRICE_STAKING_STAKE_BELOW_USD",
+        25
+      ),
+      priceStakingSellAboveUsd: getNumberSetting(
+        dbSettings,
+        "PRICE_STAKING_SELL_ABOVE_USD",
+        40
+      ),
+      priceStakingTakeProfitUsd: getNumberSetting(
+        dbSettings,
+        "PRICE_STAKING_TAKE_PROFIT_USD",
+        80
+      ),
+      priceStakingCheckIntervalMs: getNumberSetting(
+        dbSettings,
+        "PRICE_STAKING_CHECK_INTERVAL_MS",
+        120000
+      ),
 
       // Auto-Deploy Settings (legacy)
-      autoDeployIterations: getNumberSetting(dbSettings, 'AUTO_DEPLOY_ITERATIONS', 0),
-      deployMaxRetries: getNumberSetting(dbSettings, 'DEPLOY_MAX_RETRIES', 3),
-      smartRoundManagement: getBooleanSetting(dbSettings, 'SMART_ROUND_MANAGEMENT', true),
-      pauseIfLowSol: getBooleanSetting(dbSettings, 'PAUSE_IF_LOW_SOL', true),
-      resumeNextRound: getBooleanSetting(dbSettings, 'RESUME_NEXT_ROUND', true),
+      autoDeployIterations: getNumberSetting(
+        dbSettings,
+        "AUTO_DEPLOY_ITERATIONS",
+        0
+      ),
+      deployMaxRetries: getNumberSetting(dbSettings, "DEPLOY_MAX_RETRIES", 3),
+      smartRoundManagement: getBooleanSetting(
+        dbSettings,
+        "SMART_ROUND_MANAGEMENT",
+        true
+      ),
+      pauseIfLowSol: getBooleanSetting(dbSettings, "PAUSE_IF_LOW_SOL", true),
+      resumeNextRound: getBooleanSetting(dbSettings, "RESUME_NEXT_ROUND", true),
 
       // Jupiter Integration (legacy)
-      enableJupiterSwap: getBooleanSetting(dbSettings, 'ENABLE_JUPITER_SWAP', true),
-      autoSwapWhenLowSol: getBooleanSetting(dbSettings, 'AUTO_SWAP_WHEN_LOW_SOL', true),
-      swapOrbAmount: getNumberSetting(dbSettings, 'SWAP_ORB_AMOUNT', 10),
-      minOrbToKeep: getNumberSetting(dbSettings, 'MIN_ORB_TO_KEEP', 0),
-      minOrbSwapAmount: getNumberSetting(dbSettings, 'MIN_ORB_SWAP_AMOUNT', 0.1),
-      slippageBps: getNumberSetting(dbSettings, 'SLIPPAGE_BPS', 50),
-      swapPriorityFeeLamports: getPriorityFee('SWAP_PRIORITY_FEE_LAMPORTS', 100000),
-      jupiterApiUrl: getSettingValue(dbSettings, 'JUPITER_API_URL', 'https://quote-api.jup.ag/v6'),
+      enableJupiterSwap: getBooleanSetting(
+        dbSettings,
+        "ENABLE_JUPITER_SWAP",
+        true
+      ),
+      autoSwapWhenLowSol: getBooleanSetting(
+        dbSettings,
+        "AUTO_SWAP_WHEN_LOW_SOL",
+        true
+      ),
+      swapOrbAmount: getNumberSetting(dbSettings, "SWAP_ORB_AMOUNT", 10),
+      minOrbToKeep: getNumberSetting(dbSettings, "MIN_ORB_TO_KEEP", 0),
+      minOrbSwapAmount: getNumberSetting(
+        dbSettings,
+        "MIN_ORB_SWAP_AMOUNT",
+        0.1
+      ),
+      slippageBps: getNumberSetting(dbSettings, "SLIPPAGE_BPS", 50),
+      swapPriorityFeeLamports: getPriorityFee(
+        "SWAP_PRIORITY_FEE_LAMPORTS",
+        100000
+      ),
+      jupiterApiUrl: getSettingValue(
+        dbSettings,
+        "JUPITER_API_URL",
+        "https://lite-api.jup.ag/swap/v1"
+      ),
 
       // Priority Fee Settings (Dynamic Fee Optimization)
-      priorityFeeLevel: getSettingValue(dbSettings, 'PRIORITY_FEE_LEVEL', 'medium'),
-      minPriorityFeeMicroLamports: getNumberSetting(dbSettings, 'MIN_PRIORITY_FEE_MICRO_LAMPORTS', 100),
-      maxPriorityFeeMicroLamports: getNumberSetting(dbSettings, 'MAX_PRIORITY_FEE_MICRO_LAMPORTS', 50000),
+      priorityFeeLevel: getSettingValue(
+        dbSettings,
+        "PRIORITY_FEE_LEVEL",
+        "medium"
+      ),
+      minPriorityFeeMicroLamports: getNumberSetting(
+        dbSettings,
+        "MIN_PRIORITY_FEE_MICRO_LAMPORTS",
+        100
+      ),
+      maxPriorityFeeMicroLamports: getNumberSetting(
+        dbSettings,
+        "MAX_PRIORITY_FEE_MICRO_LAMPORTS",
+        50000
+      ),
 
       // Safety Settings
-      dryRun: getBooleanSetting(dbSettings, 'DRY_RUN', false),
-      requireConfirmation: getBooleanSetting(dbSettings, 'REQUIRE_CONFIRMATION', false),
-      minSolBalance: getNumberSetting(dbSettings, 'MIN_SOL_BALANCE', 0.1),
-      rateLimitMs: getNumberSetting(dbSettings, 'RATE_LIMIT_MS', 1000),
-      incognitoMode: getBooleanSetting(dbSettings, 'INCOGNITO_MODE', false),
+      dryRun: getBooleanSetting(dbSettings, "DRY_RUN", false),
+      requireConfirmation: getBooleanSetting(
+        dbSettings,
+        "REQUIRE_CONFIRMATION",
+        false
+      ),
+      minSolBalance: getNumberSetting(dbSettings, "MIN_SOL_BALANCE", 0.1),
+      rateLimitMs: getNumberSetting(dbSettings, "RATE_LIMIT_MS", 1000),
+      incognitoMode: getBooleanSetting(dbSettings, "INCOGNITO_MODE", false),
     };
 
     const dbKeys = Object.keys(dbSettings);
-    logger.info(`Configuration loaded from database: ${dbKeys.length} settings`);
+    logger.info(
+      `Configuration loaded from database: ${dbKeys.length} settings`
+    );
 
     return config;
   } catch (error) {
-    logger.error('Failed to load configuration:', error);
+    logger.error("Failed to load configuration:", error);
     throw error;
   }
 }
@@ -251,7 +451,7 @@ let cachedConfig: Config | null = null;
 export function getConfig(): Config {
   if (!cachedConfig) {
     throw new Error(
-      'Configuration not loaded yet. Call loadConfigWithDB() first (usually in main bot startup).'
+      "Configuration not loaded yet. Call loadConfigWithDB() first (usually in main bot startup)."
     );
   }
   return cachedConfig;
@@ -271,9 +471,9 @@ export async function loadAndCacheConfig(): Promise<Config> {
  * Call this after settings are updated to pick up new values immediately
  */
 export async function refreshConfig(): Promise<Config> {
-  logger.info('Refreshing configuration from database...');
+  logger.info("Refreshing configuration from database...");
   cachedConfig = await loadConfigWithDB();
-  logger.info('Configuration refreshed successfully');
+  logger.info("Configuration refreshed successfully");
   return cachedConfig;
 }
 
@@ -284,8 +484,8 @@ export async function refreshConfig(): Promise<Config> {
  */
 export function loadConfig(): Config {
   throw new Error(
-    'Synchronous config loading is no longer supported. ' +
-    'Call loadConfigWithDB() once at startup, then use getConfig() to access config.'
+    "Synchronous config loading is no longer supported. " +
+      "Call loadConfigWithDB() once at startup, then use getConfig() to access config."
   );
 }
 
@@ -298,11 +498,11 @@ export const config = new Proxy({} as Config, {
     // Lazy load on first access
     if (!cachedConfig) {
       throw new Error(
-        '⚠️  Configuration not loaded yet. ' +
-        'Call loadConfigWithDB() at bot startup before accessing config. ' +
-        'Note: .env files are no longer used - all config is in the database.'
+        "⚠️  Configuration not loaded yet. " +
+          "Call loadConfigWithDB() at bot startup before accessing config. " +
+          "Note: .env files are no longer used - all config is in the database."
       );
     }
     return cachedConfig[prop as keyof Config];
-  }
+  },
 });

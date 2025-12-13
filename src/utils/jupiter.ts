@@ -1,28 +1,93 @@
-import axios from 'axios';
-import { VersionedTransaction, PublicKey } from '@solana/web3.js';
-import { config } from './config';
-import { getConnection } from './solana';
-import { getWallet } from './wallet';
-import logger from './logger';
-import { JupiterQuote, JupiterSwapResponse } from '../types';
-import { retry, sleep } from './retry';
-import { estimatePriorityFee, parseFeeLevel, COMPUTE_UNIT_LIMITS } from './feeEstimation';
+import axios from "axios";
+import { VersionedTransaction, PublicKey } from "@solana/web3.js";
+import { config } from "./config";
+import { getConnection } from "./solana";
+import { getWallet } from "./wallet";
+import logger from "./logger";
+import { JupiterQuote, JupiterSwapResponse } from "../types";
+import { retry, sleep } from "./retry";
+import {
+  estimatePriorityFee,
+  parseFeeLevel,
+  COMPUTE_UNIT_LIMITS,
+} from "./feeEstimation";
 
-const WSOL_MINT = 'So11111111111111111111111111111111111111112'; // Wrapped SOL
-const USDC_MINT = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v'; // USDC
+const WSOL_MINT = "So11111111111111111111111111111111111111112"; // Wrapped SOL
+const USDC_MINT = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"; // USDC
 
-// Fallback endpoints if primary fails (use /swap/v1 for lite-api)
+// Fallback endpoints if primary fails (updated to use new Jupiter API endpoints)
+// Note: quote-api.jup.ag/v6 was deprecated Oct 1, 2025 - replaced with lite-api.jup.ag/swap/v1
 const FALLBACK_ENDPOINTS = [
-  'https://lite-api.jup.ag/swap/v1',
-  'https://quote-api.jup.ag/v6',
-  'https://api.jup.ag/v6',
+  "https://lite-api.jup.ag/swap/v1",
+  "https://api.jup.ag/v6", // For paid API key users
 ];
 
 let workingEndpoint: string | null = null;
 
-// Get price of ORB in SOL by using quote endpoint
-// The lite-api doesn't have a /price endpoint, so we derive price from a small quote
-export async function getOrbPrice(): Promise<{ priceInSol: number; priceInUsd: number }> {
+// Try to get price from Jupiter Price API (more efficient than quote endpoint)
+// Price API returns prices in USD, so we need SOL price to convert
+async function tryGetPriceFromPriceAPI(
+  tokenMint: string,
+  solPriceUsd: number
+): Promise<{ priceInSol: number; priceInUsd: number } | null> {
+  const PRICE_API_ENDPOINTS = [
+    "https://lite-api.jup.ag/price/v3",
+    "https://api.jup.ag/price/v3", // For paid API key users
+  ];
+
+  for (const endpoint of PRICE_API_ENDPOINTS) {
+    try {
+      const priceUrl = `${endpoint}/price`;
+      const response = await axios.get(priceUrl, {
+        params: {
+          ids: tokenMint, // Token mint address
+        },
+        timeout: 10000,
+        headers: {
+          Accept: "application/json",
+          "User-Agent": "ORB-Mining-Bot/1.0",
+        },
+      });
+
+      // Price API v3 returns: {"tokenMint": {"usdPrice": ..., ...}}
+      // Check both possible response formats for compatibility
+      const priceData =
+        response.data?.[tokenMint] || response.data?.data?.[tokenMint];
+
+      if (priceData) {
+        // Price API returns price in USD as "usdPrice" field
+        const priceInUsd = priceData.usdPrice || priceData.price;
+
+        if (priceInUsd && typeof priceInUsd === "number" && priceInUsd > 0) {
+          const priceInSol = solPriceUsd > 0 ? priceInUsd / solPriceUsd : 0;
+
+          logger.debug(
+            `Got ORB price from Price API: $${priceInUsd.toFixed(
+              2
+            )} USD (${priceInSol.toFixed(8)} SOL)`
+          );
+          return { priceInSol, priceInUsd };
+        }
+      }
+    } catch (error: any) {
+      const errorDetails = error.response
+        ? `HTTP ${error.response.status}: ${JSON.stringify(
+            error.response.data
+          )}`
+        : error.message || error.code;
+      logger.debug(`Price API ${endpoint} failed: ${errorDetails}`);
+      continue;
+    }
+  }
+  return null;
+}
+
+// Get price of ORB in SOL by using quote endpoint or Price API
+// Updated to use new Jupiter API endpoints (lite-api.jup.ag)
+export async function getOrbPrice(): Promise<{
+  priceInSol: number;
+  priceInUsd: number;
+}> {
   // Check cache first
   const cached = getCachedOrbPrice();
   if (cached !== null) return cached;
@@ -31,6 +96,21 @@ export async function getOrbPrice(): Promise<{ priceInSol: number; priceInUsd: n
     // Use retry wrapper for robustness against temporary failures
     const result = await retry(
       async () => {
+        // Get SOL price first (needed for Price API conversion and quote fallback)
+        const solPriceUsd = await getSolPriceInUsd();
+
+        // Try Price API first (more efficient)
+        const priceApiResult = await tryGetPriceFromPriceAPI(
+          config.orbTokenMint.toBase58(),
+          solPriceUsd
+        );
+        if (priceApiResult) {
+          return priceApiResult;
+        }
+
+        // Fallback to quote endpoint if Price API fails
+        logger.debug("Price API unavailable, falling back to quote endpoint");
+
         // Request a quote for 1 ORB to SOL to get the current price
         const oneOrbInLamports = 1e9; // 1 ORB = 1,000,000,000 lamports
 
@@ -38,9 +118,9 @@ export async function getOrbPrice(): Promise<{ priceInSol: number; priceInUsd: n
           inputMint: config.orbTokenMint.toBase58(),
           outputMint: WSOL_MINT,
           amount: oneOrbInLamports.toString(),
-          slippageBps: '50',
-          onlyDirectRoutes: 'false',
-          asLegacyTransaction: 'false',
+          slippageBps: "50",
+          onlyDirectRoutes: "false",
+          asLegacyTransaction: "false",
         };
 
         // Try to get quote from working endpoint
@@ -57,7 +137,7 @@ export async function getOrbPrice(): Promise<{ priceInSol: number; priceInUsd: n
         // Try primary endpoint if working endpoint failed
         if (!quote) {
           if (workingEndpoint) {
-            logger.debug('Cached endpoint failed, trying primary endpoint');
+            logger.debug("Cached endpoint failed, trying primary endpoint");
             await sleep(500); // Small delay to avoid rate limiting
           }
           quote = await tryGetQuote(config.jupiterApiUrl, params);
@@ -65,7 +145,7 @@ export async function getOrbPrice(): Promise<{ priceInSol: number; priceInUsd: n
 
         // Try fallback endpoints with delays between attempts
         if (!quote) {
-          logger.debug('Primary endpoint failed, trying fallbacks...');
+          logger.debug("Primary endpoint failed, trying fallbacks...");
           for (const fallbackUrl of FALLBACK_ENDPOINTS) {
             if (fallbackUrl === config.jupiterApiUrl) continue;
 
@@ -76,18 +156,30 @@ export async function getOrbPrice(): Promise<{ priceInSol: number; priceInUsd: n
         }
 
         if (!quote || !quote.outAmount) {
-          throw new Error('Failed to get ORB price quote from all endpoints');
+          // If quote endpoint fails, log the issue but don't fail completely
+          // Price API should have been tried first and should work
+          logger.warn(
+            "Quote endpoint failed - this may indicate no direct ORB->SOL route. " +
+              "Price API should have been used instead. If Price API also failed, " +
+              "check token liquidity or try a different price source."
+          );
+          throw new Error("Failed to get ORB price quote from all endpoints");
         }
 
         // Calculate price: (output SOL in lamports) / (input ORB in lamports)
         // This gives us SOL per ORB
         const priceInSol = Number(quote.outAmount) / oneOrbInLamports;
 
-        // Get SOL price in USD to calculate ORB price in USD
-        const solPriceUsd = await getSolPriceInUsd();
+        // Use already fetched SOL price to calculate ORB price in USD
         const priceInUsd = priceInSol * solPriceUsd;
 
-        logger.debug(`ORB Price: ${priceInSol.toFixed(8)} SOL (~$${priceInUsd.toFixed(2)} USD) (from quote: 1 ORB → ${(Number(quote.outAmount) / 1e9).toFixed(8)} SOL)`);
+        logger.debug(
+          `ORB Price: ${priceInSol.toFixed(8)} SOL (~$${priceInUsd.toFixed(
+            2
+          )} USD) (from quote: 1 ORB → ${(
+            Number(quote.outAmount) / 1e9
+          ).toFixed(8)} SOL)`
+        );
 
         return {
           priceInSol,
@@ -100,19 +192,19 @@ export async function getOrbPrice(): Promise<{ priceInSol: number; priceInUsd: n
         maxDelayMs: 10000,
         exponentialBase: 2,
       },
-      'ORB Price Fetch'
+      "ORB Price Fetch"
     );
 
     // Cache the result
     priceCache.orbPrice = {
       priceInSol: result.priceInSol,
       priceInUsd: result.priceInUsd,
-      timestamp: Date.now()
+      timestamp: Date.now(),
     };
 
     return result;
   } catch (error) {
-    logger.error('Failed to fetch ORB price after all retries:', error);
+    logger.error("Failed to fetch ORB price after all retries:", error);
     return { priceInSol: 0, priceInUsd: 0 };
   }
 }
@@ -127,17 +219,37 @@ const priceCache: PriceCache = {};
 const PRICE_CACHE_DURATION_MS = 2 * 60 * 1000; // 2 minutes cache
 
 // Get cached price if available and not expired
-function getCachedOrbPrice(): { priceInSol: number; priceInUsd: number } | null {
-  if (priceCache.orbPrice && Date.now() - priceCache.orbPrice.timestamp < PRICE_CACHE_DURATION_MS) {
-    logger.debug(`Using cached ORB price (age: ${Math.floor((Date.now() - priceCache.orbPrice.timestamp) / 1000)}s)`);
-    return { priceInSol: priceCache.orbPrice.priceInSol, priceInUsd: priceCache.orbPrice.priceInUsd };
+function getCachedOrbPrice(): {
+  priceInSol: number;
+  priceInUsd: number;
+} | null {
+  if (
+    priceCache.orbPrice &&
+    Date.now() - priceCache.orbPrice.timestamp < PRICE_CACHE_DURATION_MS
+  ) {
+    logger.debug(
+      `Using cached ORB price (age: ${Math.floor(
+        (Date.now() - priceCache.orbPrice.timestamp) / 1000
+      )}s)`
+    );
+    return {
+      priceInSol: priceCache.orbPrice.priceInSol,
+      priceInUsd: priceCache.orbPrice.priceInUsd,
+    };
   }
   return null;
 }
 
 function getCachedSolPrice(): number | null {
-  if (priceCache.solPrice && Date.now() - priceCache.solPrice.timestamp < PRICE_CACHE_DURATION_MS) {
-    logger.debug(`Using cached SOL price (age: ${Math.floor((Date.now() - priceCache.solPrice.timestamp) / 1000)}s)`);
+  if (
+    priceCache.solPrice &&
+    Date.now() - priceCache.solPrice.timestamp < PRICE_CACHE_DURATION_MS
+  ) {
+    logger.debug(
+      `Using cached SOL price (age: ${Math.floor(
+        (Date.now() - priceCache.solPrice.timestamp) / 1000
+      )}s)`
+    );
     return priceCache.solPrice.priceInUsd;
   }
   return null;
@@ -159,9 +271,9 @@ export async function getSolPriceInUsd(): Promise<number> {
           inputMint: WSOL_MINT,
           outputMint: USDC_MINT,
           amount: oneSolInLamports.toString(),
-          slippageBps: '50',
-          onlyDirectRoutes: 'false',
-          asLegacyTransaction: 'false',
+          slippageBps: "50",
+          onlyDirectRoutes: "false",
+          asLegacyTransaction: "false",
         };
 
         // Try to get quote
@@ -191,13 +303,19 @@ export async function getSolPriceInUsd(): Promise<number> {
         }
 
         if (!quote || !quote.outAmount) {
-          throw new Error('Failed to get SOL/USD price quote from all endpoints');
+          throw new Error(
+            "Failed to get SOL/USD price quote from all endpoints"
+          );
         }
 
         // USDC has 6 decimals, so divide by 1e6
         const priceInUsd = Number(quote.outAmount) / 1e6;
 
-        logger.debug(`SOL Price: $${priceInUsd.toFixed(2)} USD (from quote: 1 SOL → ${priceInUsd.toFixed(2)} USDC)`);
+        logger.debug(
+          `SOL Price: $${priceInUsd.toFixed(
+            2
+          )} USD (from quote: 1 SOL → ${priceInUsd.toFixed(2)} USDC)`
+        );
 
         // Cache the result
         priceCache.solPrice = { priceInUsd, timestamp: Date.now() };
@@ -210,10 +328,10 @@ export async function getSolPriceInUsd(): Promise<number> {
         maxDelayMs: 10000,
         exponentialBase: 2,
       },
-      'SOL Price Fetch'
+      "SOL Price Fetch"
     );
   } catch (error) {
-    logger.error('Failed to fetch SOL/USD price after all retries:', error);
+    logger.error("Failed to fetch SOL/USD price after all retries:", error);
     return 0;
   }
 }
@@ -225,12 +343,13 @@ async function tryGetQuote(
 ): Promise<JupiterQuote | null> {
   try {
     const quoteUrl = `${endpoint}/quote`;
+    logger.debug(`Requesting quote from ${quoteUrl} with params:`, params);
     const response = await axios.get(quoteUrl, {
       params,
       timeout: 20000, // Increased from 15s to 20s for better reliability
       headers: {
-        'Accept': 'application/json',
-        'User-Agent': 'ORB-Mining-Bot/1.0', // Identify as bot to avoid rate limiting
+        Accept: "application/json",
+        "User-Agent": "ORB-Mining-Bot/1.0", // Identify as bot to avoid rate limiting
       },
     });
 
@@ -242,13 +361,21 @@ async function tryGetQuote(
       }
       return response.data as JupiterQuote;
     }
+
+    // Log if response doesn't have expected structure
+    logger.debug(
+      `Quote response missing outAmount. Response:`,
+      JSON.stringify(response.data).substring(0, 200)
+    );
     return null;
   } catch (error: any) {
     // Log more detailed error info for debugging
-    const errorMsg = error.response?.status
-      ? `HTTP ${error.response.status}: ${error.response.statusText}`
-      : error.code || error.message;
-    logger.debug(`Endpoint ${endpoint} failed: ${errorMsg}`);
+    const errorDetails = error.response
+      ? `HTTP ${error.response.status} ${
+          error.response.statusText
+        }: ${JSON.stringify(error.response.data).substring(0, 300)}`
+      : `${error.code || error.message} - ${error.message}`;
+    logger.warn(`Endpoint ${endpoint}/quote failed: ${errorDetails}`);
 
     // If we get rate limited (429), clear the cached working endpoint
     if (error.response?.status === 429) {
@@ -276,33 +403,43 @@ export async function getSwapQuote(
       outputMint: WSOL_MINT,
       amount: inputAmountLamports.toString(),
       slippageBps: (slippageBps || config.slippageBps).toString(),
-      onlyDirectRoutes: 'false',
-      asLegacyTransaction: 'false',
+      onlyDirectRoutes: "false",
+      asLegacyTransaction: "false",
     };
 
-    logger.debug('Requesting Jupiter quote with params:', params);
+    logger.debug("Requesting Jupiter quote with params:", params);
 
     // Try working endpoint first if we have one cached
     if (workingEndpoint) {
       const quote = await tryGetQuote(workingEndpoint, params);
       if (quote) {
-        logger.info(`Quote: ${inputAmount} ORB → ${Number(quote.outAmount) / 1e9} SOL (impact: ${quote.priceImpactPct}%)`);
+        logger.info(
+          `Quote: ${inputAmount} ORB → ${
+            Number(quote.outAmount) / 1e9
+          } SOL (impact: ${quote.priceImpactPct}%)`
+        );
         return quote;
       }
       // If cached endpoint fails, clear it
-      logger.warn(`Cached endpoint ${workingEndpoint} failed, trying fallbacks...`);
+      logger.warn(
+        `Cached endpoint ${workingEndpoint} failed, trying fallbacks...`
+      );
       workingEndpoint = null;
     }
 
     // Try primary endpoint from config
     const primaryQuote = await tryGetQuote(config.jupiterApiUrl, params);
     if (primaryQuote) {
-      logger.info(`Quote: ${inputAmount} ORB → ${Number(primaryQuote.outAmount) / 1e9} SOL (impact: ${primaryQuote.priceImpactPct}%)`);
+      logger.info(
+        `Quote: ${inputAmount} ORB → ${
+          Number(primaryQuote.outAmount) / 1e9
+        } SOL (impact: ${primaryQuote.priceImpactPct}%)`
+      );
       return primaryQuote;
     }
 
     // Try fallback endpoints
-    logger.warn('Primary endpoint failed, trying fallbacks...');
+    logger.warn("Primary endpoint failed, trying fallbacks...");
     for (const fallbackUrl of FALLBACK_ENDPOINTS) {
       if (fallbackUrl === config.jupiterApiUrl) continue; // Skip if same as primary
 
@@ -310,16 +447,22 @@ export async function getSwapQuote(
       const quote = await tryGetQuote(fallbackUrl, params);
       if (quote) {
         logger.info(`✅ Fallback successful: ${fallbackUrl}`);
-        logger.info(`Quote: ${inputAmount} ORB → ${Number(quote.outAmount) / 1e9} SOL (impact: ${quote.priceImpactPct}%)`);
-        logger.info(`💡 Consider updating .env: JUPITER_API_URL=${fallbackUrl}`);
+        logger.info(
+          `Quote: ${inputAmount} ORB → ${
+            Number(quote.outAmount) / 1e9
+          } SOL (impact: ${quote.priceImpactPct}%)`
+        );
+        logger.info(
+          `💡 Consider updating .env: JUPITER_API_URL=${fallbackUrl}`
+        );
         return quote;
       }
     }
 
-    logger.error('❌ All Jupiter endpoints failed');
+    logger.error("❌ All Jupiter endpoints failed");
     return null;
   } catch (error) {
-    logger.error('Failed to get swap quote:', error);
+    logger.error("Failed to get swap quote:", error);
     return null;
   }
 }
@@ -337,16 +480,20 @@ export async function executeSwap(quote: JupiterQuote): Promise<string | null> {
     logger.info(`Requesting swap transaction from ${swapEndpoint}...`);
 
     // Determine priority fee (use dynamic estimation or config value)
-    let priorityFeeLamports: number | 'auto';
+    let priorityFeeLamports: number | "auto";
 
-    if (config.swapPriorityFeeLamports === 'auto') {
+    if (config.swapPriorityFeeLamports === "auto") {
       // Use 'auto' to let Jupiter handle it
-      priorityFeeLamports = 'auto';
-      logger.debug('Using Jupiter auto priority fee');
+      priorityFeeLamports = "auto";
+      logger.debug("Using Jupiter auto priority fee");
     } else if (config.swapPriorityFeeLamports > 0) {
       // Use static config value
       priorityFeeLamports = config.swapPriorityFeeLamports;
-      logger.debug(`Using static swap priority fee: ${priorityFeeLamports} lamports (~${(priorityFeeLamports / 1e9).toFixed(6)} SOL)`);
+      logger.debug(
+        `Using static swap priority fee: ${priorityFeeLamports} lamports (~${(
+          priorityFeeLamports / 1e9
+        ).toFixed(6)} SOL)`
+      );
     } else {
       // Use dynamic fee estimation from our utility
       try {
@@ -368,9 +515,13 @@ export async function executeSwap(quote: JupiterQuote): Promise<string | null> {
 
         // Convert from micro-lamports to total lamports
         priorityFeeLamports = feeEstimate.totalFeeLamports;
-        logger.debug(`Using dynamic swap fee estimate: ${priorityFeeLamports} lamports (~${(priorityFeeLamports / 1e9).toFixed(6)} SOL)`);
+        logger.debug(
+          `Using dynamic swap fee estimate: ${priorityFeeLamports} lamports (~${(
+            priorityFeeLamports / 1e9
+          ).toFixed(6)} SOL)`
+        );
       } catch (error) {
-        logger.warn('Fee estimation failed for swap, using fallback', error);
+        logger.warn("Fee estimation failed for swap, using fallback", error);
         priorityFeeLamports = 100000; // Fallback: 0.0001 SOL
       }
     }
@@ -387,7 +538,7 @@ export async function executeSwap(quote: JupiterQuote): Promise<string | null> {
       {
         timeout: 30000,
         headers: {
-          'Content-Type': 'application/json',
+          "Content-Type": "application/json",
         },
       }
     );
@@ -395,36 +546,42 @@ export async function executeSwap(quote: JupiterQuote): Promise<string | null> {
     const { swapTransaction } = swapResponse.data;
 
     // Deserialize the transaction
-    const transactionBuf = Buffer.from(swapTransaction, 'base64');
+    const transactionBuf = Buffer.from(swapTransaction, "base64");
     const transaction = VersionedTransaction.deserialize(transactionBuf);
 
     // Sign the transaction
     transaction.sign([wallet]);
 
     // Send and confirm transaction
-    logger.info('Sending swap transaction...');
+    logger.info("Sending swap transaction...");
     const signature = await retry(
       async () => {
-        const sig = await connection.sendRawTransaction(transaction.serialize(), {
-          skipPreflight: false,
-          maxRetries: 3,
-        });
+        const sig = await connection.sendRawTransaction(
+          transaction.serialize(),
+          {
+            skipPreflight: false,
+            maxRetries: 3,
+          }
+        );
 
         // Wait for confirmation
-        const confirmation = await connection.confirmTransaction(sig, 'confirmed');
+        const confirmation = await connection.confirmTransaction(
+          sig,
+          "confirmed"
+        );
         if (confirmation.value.err) {
           throw new Error(`Transaction failed: ${confirmation.value.err}`);
         }
         return sig;
       },
       { maxRetries: config.deployMaxRetries },
-      'Swap transaction'
+      "Swap transaction"
     );
 
     logger.info(`Swap successful! Signature: ${signature}`);
     return signature;
   } catch (error) {
-    logger.error('Failed to execute swap:', error);
+    logger.error("Failed to execute swap:", error);
     return null;
   }
 }
@@ -458,7 +615,7 @@ export async function swapOrbToSol(
       solReceived: expectedSol,
     };
   } catch (error) {
-    logger.error('Swap failed:', error);
+    logger.error("Swap failed:", error);
     return { success: false };
   }
 }

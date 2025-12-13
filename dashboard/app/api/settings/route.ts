@@ -364,8 +364,8 @@ export const SETTINGS_DEFINITIONS: SettingDefinition[] = [
     type: 'text',
     label: 'Jupiter API URL',
     description: 'Jupiter aggregator API endpoint',
-    defaultValue: 'https://quote-api.jup.ag/v6',
-    placeholder: 'https://quote-api.jup.ag/v6',
+    defaultValue: 'https://lite-api.jup.ag/swap/v1',
+    placeholder: 'https://lite-api.jup.ag/swap/v1',
     category: 'swap',
   },
 
