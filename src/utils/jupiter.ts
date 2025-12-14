@@ -58,63 +58,84 @@ export async function getOrbPrice(): Promise<{ priceInSol: number; priceInUsd: n
     // Use retry wrapper for robustness against temporary failures
     const result = await retry(
       async () => {
-        // Request a quote for 1 ORB to SOL to get the current price
-        const oneOrbInLamports = 1e9; // 1 ORB = 1,000,000,000 lamports
+        // Try different amounts if Jupiter can't find route (liquidity issues)
+        const testAmounts = [1, 0.1, 0.01]; // Try 1 ORB, then 0.1, then 0.01
 
-        const params = {
-          inputMint: config.orbTokenMint.toBase58(),
-          outputMint: WSOL_MINT,
-          amount: oneOrbInLamports.toString(),
-          slippageBps: '50',
-          onlyDirectRoutes: 'false',
-          asLegacyTransaction: 'false',
-        };
-
-        // Try to get quote from working endpoint
         let quote = null;
+        let usedAmount = 0;
 
-        // Try working endpoint first
-        if (workingEndpoint) {
-          quote = await tryGetQuote(workingEndpoint, params);
-          if (quote) {
-            logger.debug(`Using cached working endpoint: ${workingEndpoint}`);
-          }
-        }
+        for (const orbAmount of testAmounts) {
+          const amountInLamports = Math.floor(orbAmount * 1e9);
 
-        // Try primary endpoint if working endpoint failed
-        if (!quote) {
+          const params = {
+            inputMint: config.orbTokenMint.toBase58(),
+            outputMint: WSOL_MINT,
+            amount: amountInLamports.toString(),
+            slippageBps: '50',
+            onlyDirectRoutes: 'false', // Allow multi-hop routes
+            asLegacyTransaction: 'false',
+          };
+
+          logger.debug(`Trying ${orbAmount} ORB quote (${amountInLamports} lamports)...`);
+
+          // Try to get quote from working endpoint
           if (workingEndpoint) {
-            logger.debug('Cached endpoint failed, trying primary endpoint');
-            await sleep(500); // Small delay to avoid rate limiting
+            quote = await tryGetQuote(workingEndpoint, params);
+            if (quote) {
+              logger.debug(`✅ Got quote using cached endpoint for ${orbAmount} ORB`);
+              usedAmount = amountInLamports;
+              break;
+            }
           }
-          quote = await tryGetQuote(config.jupiterApiUrl, params);
-        }
 
-        // Try fallback endpoints with delays between attempts
-        if (!quote) {
-          logger.debug('Primary endpoint failed, trying fallbacks...');
-          for (const fallbackUrl of FALLBACK_ENDPOINTS) {
-            if (fallbackUrl === config.jupiterApiUrl) continue;
-
-            await sleep(500); // Delay between endpoint attempts to avoid rate limiting
-            quote = await tryGetQuote(fallbackUrl, params);
-            if (quote) break;
+          // Try primary endpoint if working endpoint failed
+          if (!quote) {
+            if (workingEndpoint) {
+              logger.debug('Cached endpoint failed, trying primary endpoint');
+              await sleep(500);
+            }
+            quote = await tryGetQuote(config.jupiterApiUrl, params);
+            if (quote) {
+              logger.debug(`✅ Got quote from primary endpoint for ${orbAmount} ORB`);
+              usedAmount = amountInLamports;
+              break;
+            }
           }
+
+          // Try fallback endpoints
+          if (!quote) {
+            for (const fallbackUrl of FALLBACK_ENDPOINTS) {
+              if (fallbackUrl === config.jupiterApiUrl) continue;
+              await sleep(500);
+              quote = await tryGetQuote(fallbackUrl, params);
+              if (quote) {
+                logger.debug(`✅ Got quote from fallback for ${orbAmount} ORB`);
+                usedAmount = amountInLamports;
+                break;
+              }
+            }
+          }
+
+          // If we got a quote, stop trying other amounts
+          if (quote) break;
+
+          // If this amount failed, try next smaller amount
+          logger.debug(`❌ No route found for ${orbAmount} ORB, trying smaller amount...`);
         }
 
         if (!quote || !quote.outAmount) {
-          throw new Error('Failed to get ORB price quote from all endpoints');
+          throw new Error('Failed to get ORB price quote from all endpoints and amounts');
         }
 
         // Calculate price: (output SOL in lamports) / (input ORB in lamports)
         // This gives us SOL per ORB
-        const priceInSol = Number(quote.outAmount) / oneOrbInLamports;
+        const priceInSol = Number(quote.outAmount) / usedAmount;
 
         // Get SOL price in USD to calculate ORB price in USD
         const solPriceUsd = await getSolPriceInUsd();
         const priceInUsd = priceInSol * solPriceUsd;
 
-        logger.debug(`ORB Price: ${priceInSol.toFixed(8)} SOL (~$${priceInUsd.toFixed(2)} USD) (from quote: 1 ORB → ${(Number(quote.outAmount) / 1e9).toFixed(8)} SOL)`);
+        logger.info(`✅ ORB Price: ${priceInSol.toFixed(8)} SOL (~$${priceInUsd.toFixed(2)} USD) (from ${usedAmount / 1e9} ORB → ${(Number(quote.outAmount) / 1e9).toFixed(8)} SOL)`);
 
         return {
           priceInSol,
