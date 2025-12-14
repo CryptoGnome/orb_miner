@@ -188,14 +188,15 @@ async function isProfitableToMine(
     const { priceInSol: orbPrice } = await getOrbPrice();
 
     if (orbPrice === 0) {
-      logger.warn('⚠️  Could not fetch ORB price, assuming not profitable');
+      logger.warn('⚠️  Could not fetch ORB price - continuing to mine anyway (price check skipped)');
+      logger.info('💡 Mining will continue collecting ORB rewards despite temporary price unavailability');
       return {
-        profitable: false,
+        profitable: true, // Continue mining even when price unavailable
         expectedValue: 0,
         productionCost: costPerRound,
-        expectedReturns: 0,
+        expectedReturns: costPerRound * 0.95, // Still get ~95% SOL back
         orbPrice: 0,
-        breakdownMessage: 'ORB price unavailable',
+        breakdownMessage: 'ORB price unavailable - profitability check skipped, continuing to mine',
       };
     }
 

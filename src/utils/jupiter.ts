@@ -121,6 +121,9 @@ export async function getOrbPrice(): Promise<{ priceInSol: number; priceInUsd: n
 
           // If this amount failed, try next smaller amount
           logger.debug(`❌ No route found for ${orbAmount} ORB, trying smaller amount...`);
+
+          // Add delay before trying next amount to respect rate limits
+          await sleep(1500); // Wait 1.5s before trying next amount
         }
 
         if (!quote || !quote.outAmount) {
