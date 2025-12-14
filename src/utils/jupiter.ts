@@ -55,115 +55,114 @@ export async function getOrbPrice(): Promise<{ priceInSol: number; priceInUsd: n
   }
 
   try {
-    // Use retry wrapper for robustness against temporary failures
-    const result = await retry(
-      async () => {
-        // Try different amounts if Jupiter can't find route (liquidity issues)
-        const testAmounts = [1, 0.1, 0.01]; // Try 1 ORB, then 0.1, then 0.01
+    // Try different amounts if Jupiter can't find route (liquidity issues)
+    const testAmounts = [1, 0.1, 0.01]; // Try 1 ORB, then 0.1, then 0.01
 
-        let quote = null;
-        let usedAmount = 0;
+    let quote = null;
+    let usedAmount = 0;
+    let noRouteFound = false;
 
-        for (const orbAmount of testAmounts) {
-          const amountInLamports = Math.floor(orbAmount * 1e9);
+    for (const orbAmount of testAmounts) {
+      const amountInLamports = Math.floor(orbAmount * 1e9);
 
-          const params = {
-            inputMint: config.orbTokenMint.toBase58(),
-            outputMint: WSOL_MINT,
-            amount: amountInLamports.toString(),
-            slippageBps: '50',
-            onlyDirectRoutes: 'false', // Allow multi-hop routes
-            asLegacyTransaction: 'false',
-          };
+      const params = {
+        inputMint: config.orbTokenMint.toBase58(),
+        outputMint: WSOL_MINT,
+        amount: amountInLamports.toString(),
+        slippageBps: '50',
+        onlyDirectRoutes: 'false', // Allow multi-hop routes
+        asLegacyTransaction: 'false',
+      };
 
-          logger.debug(`Trying ${orbAmount} ORB quote (${amountInLamports} lamports)...`);
+      logger.debug(`Trying ${orbAmount} ORB quote (${amountInLamports} lamports)...`);
 
-          // Try to get quote from working endpoint
-          if (workingEndpoint) {
-            quote = await tryGetQuote(workingEndpoint, params);
-            if (quote) {
-              logger.debug(`✅ Got quote using cached endpoint for ${orbAmount} ORB`);
-              usedAmount = amountInLamports;
-              break;
-            }
-          }
-
-          // Try primary endpoint if working endpoint failed
-          if (!quote) {
-            if (workingEndpoint) {
-              logger.debug('Cached endpoint failed, trying primary endpoint');
-              await sleep(500);
-            }
-            quote = await tryGetQuote(config.jupiterApiUrl, params);
-            if (quote) {
-              logger.debug(`✅ Got quote from primary endpoint for ${orbAmount} ORB`);
-              usedAmount = amountInLamports;
-              break;
-            }
-          }
-
-          // Try fallback endpoints
-          if (!quote) {
-            for (const fallbackUrl of FALLBACK_ENDPOINTS) {
-              if (fallbackUrl === config.jupiterApiUrl) continue;
-              await sleep(500);
-              quote = await tryGetQuote(fallbackUrl, params);
-              if (quote) {
-                logger.debug(`✅ Got quote from fallback for ${orbAmount} ORB`);
-                usedAmount = amountInLamports;
-                break;
-              }
-            }
-          }
-
-          // If we got a quote, stop trying other amounts
-          if (quote) break;
-
-          // If this amount failed, try next smaller amount
-          logger.debug(`❌ No route found for ${orbAmount} ORB, trying smaller amount...`);
-
-          // Add delay before trying next amount to respect rate limits
-          await sleep(1500); // Wait 1.5s before trying next amount
+      // Try working endpoint first (only once, no retries for "no route" errors)
+      if (workingEndpoint) {
+        const result = await tryGetQuote(workingEndpoint, params);
+        if (result.quote) {
+          quote = result.quote;
+          usedAmount = amountInLamports;
+          logger.debug(`✅ Got quote using cached endpoint for ${orbAmount} ORB`);
+          break;
         }
+        if (result.noRoute) noRouteFound = true;
+      }
 
-        if (!quote || !quote.outAmount) {
-          throw new Error('Failed to get ORB price quote from all endpoints and amounts');
+      // Try primary endpoint if needed
+      if (!quote) {
+        if (workingEndpoint) await sleep(500);
+        const result = await tryGetQuote(config.jupiterApiUrl, params);
+        if (result.quote) {
+          quote = result.quote;
+          usedAmount = amountInLamports;
+          logger.debug(`✅ Got quote from primary endpoint for ${orbAmount} ORB`);
+          break;
         }
+        if (result.noRoute) noRouteFound = true;
+      }
 
-        // Calculate price: (output SOL in lamports) / (input ORB in lamports)
-        // This gives us SOL per ORB
-        const priceInSol = Number(quote.outAmount) / usedAmount;
+      // Try fallback endpoints if needed
+      if (!quote) {
+        for (const fallbackUrl of FALLBACK_ENDPOINTS) {
+          if (fallbackUrl === config.jupiterApiUrl) continue;
+          await sleep(500);
+          const result = await tryGetQuote(fallbackUrl, params);
+          if (result.quote) {
+            quote = result.quote;
+            usedAmount = amountInLamports;
+            logger.debug(`✅ Got quote from fallback for ${orbAmount} ORB`);
+            break;
+          }
+          if (result.noRoute) noRouteFound = true;
+        }
+      }
 
-        // Get SOL price in USD to calculate ORB price in USD
-        const solPriceUsd = await getSolPriceInUsd();
-        const priceInUsd = priceInSol * solPriceUsd;
+      // If we got a quote, stop trying other amounts
+      if (quote) break;
 
-        logger.info(`✅ ORB Price: ${priceInSol.toFixed(8)} SOL (~$${priceInUsd.toFixed(2)} USD) (from ${usedAmount / 1e9} ORB → ${(Number(quote.outAmount) / 1e9).toFixed(8)} SOL)`);
+      // If this amount failed, try next smaller amount
+      logger.debug(`❌ No route found for ${orbAmount} ORB, trying smaller amount...`);
 
-        return {
-          priceInSol,
-          priceInUsd,
-        };
-      },
-      {
-        maxRetries: 3,
-        initialDelayMs: 2000,
-        maxDelayMs: 10000,
-        exponentialBase: 2,
-      },
-      'ORB Price Fetch'
-    );
+      // Add delay before trying next amount to respect rate limits
+      if (orbAmount !== testAmounts[testAmounts.length - 1]) {
+        await sleep(1500); // Wait 1.5s before trying next amount (skip for last one)
+      }
+    }
 
-    // Cache the result
+    // If no route found for any amount, cache the failure and return quickly
+    if (!quote || !quote.outAmount) {
+      if (noRouteFound) {
+        logger.warn('⚠️  Jupiter cannot find trading route for ORB→SOL (no liquidity or wrong token)');
+        logger.warn('💡 Caching failure for 5 minutes to avoid blocking dashboard');
+        priceCache.orbPriceFailure = { timestamp: Date.now() };
+      }
+      return { priceInSol: 0, priceInUsd: 0 };
+    }
+
+    // Calculate price: (output SOL in lamports) / (input ORB in lamports)
+    const priceInSol = Number(quote.outAmount) / usedAmount;
+
+    // Get SOL price in USD to calculate ORB price in USD
+    const solPriceUsd = await getSolPriceInUsd();
+    const priceInUsd = priceInSol * solPriceUsd;
+
+    logger.info(`✅ ORB Price: ${priceInSol.toFixed(8)} SOL (~$${priceInUsd.toFixed(2)} USD) (from ${usedAmount / 1e9} ORB → ${(Number(quote.outAmount) / 1e9).toFixed(8)} SOL)`);
+
+    // Cache the successful result
     priceCache.orbPrice = {
-      priceInSol: result.priceInSol,
-      priceInUsd: result.priceInUsd,
+      priceInSol,
+      priceInUsd,
       timestamp: Date.now()
     };
 
-    return result;
+    // Clear any cached failure
+    delete priceCache.orbPriceFailure;
+
+    return { priceInSol, priceInUsd };
   } catch (error) {
-    logger.error('Failed to fetch ORB price after all retries:', error);
+    logger.error('Failed to fetch ORB price:', error);
+    // Cache the failure to avoid retry loops
+    priceCache.orbPriceFailure = { timestamp: Date.now() };
     return { priceInSol: 0, priceInUsd: 0 };
   }
 }
@@ -172,13 +171,22 @@ export async function getOrbPrice(): Promise<{ priceInSol: number; priceInUsd: n
 interface PriceCache {
   orbPrice?: { priceInSol: number; priceInUsd: number; timestamp: number };
   solPrice?: { priceInUsd: number; timestamp: number };
+  orbPriceFailure?: { timestamp: number }; // Cache failures to avoid retry loops
 }
 
 const priceCache: PriceCache = {};
 const PRICE_CACHE_DURATION_MS = 2 * 60 * 1000; // 2 minutes cache
+const FAILURE_CACHE_DURATION_MS = 5 * 60 * 1000; // 5 minutes cache for failures
 
 // Get cached price if available and not expired
 function getCachedOrbPrice(): { priceInSol: number; priceInUsd: number } | null {
+  // Check if we recently failed to get price (avoid retry loops)
+  if (priceCache.orbPriceFailure && Date.now() - priceCache.orbPriceFailure.timestamp < FAILURE_CACHE_DURATION_MS) {
+    const ageSeconds = Math.floor((Date.now() - priceCache.orbPriceFailure.timestamp) / 1000);
+    logger.debug(`Returning cached failure (no route available, age: ${ageSeconds}s)`);
+    return { priceInSol: 0, priceInUsd: 0 };
+  }
+
   if (priceCache.orbPrice && Date.now() - priceCache.orbPrice.timestamp < PRICE_CACHE_DURATION_MS) {
     logger.debug(`Using cached ORB price (age: ${Math.floor((Date.now() - priceCache.orbPrice.timestamp) / 1000)}s)`);
     return { priceInSol: priceCache.orbPrice.priceInSol, priceInUsd: priceCache.orbPrice.priceInUsd };
@@ -216,11 +224,12 @@ export async function getSolPriceInUsd(): Promise<number> {
         };
 
         // Try to get quote
-        let quote = null;
+        let quote: JupiterQuote | null = null;
 
         // Try working endpoint first
         if (workingEndpoint) {
-          quote = await tryGetQuote(workingEndpoint, params);
+          const result = await tryGetQuote(workingEndpoint, params);
+          quote = result.quote;
         }
 
         // Try primary endpoint if working endpoint failed
@@ -228,7 +237,8 @@ export async function getSolPriceInUsd(): Promise<number> {
           if (workingEndpoint) {
             await sleep(500); // Small delay to avoid rate limiting
           }
-          quote = await tryGetQuote(config.jupiterApiUrl, params);
+          const result = await tryGetQuote(config.jupiterApiUrl, params);
+          quote = result.quote;
         }
 
         // Try fallback endpoints with delays
@@ -236,7 +246,8 @@ export async function getSolPriceInUsd(): Promise<number> {
           for (const fallbackUrl of FALLBACK_ENDPOINTS) {
             if (fallbackUrl === config.jupiterApiUrl) continue;
             await sleep(500); // Delay between endpoint attempts
-            quote = await tryGetQuote(fallbackUrl, params);
+            const result = await tryGetQuote(fallbackUrl, params);
+            quote = result.quote;
             if (quote) break;
           }
         }
@@ -273,7 +284,7 @@ export async function getSolPriceInUsd(): Promise<number> {
 async function tryGetQuote(
   endpoint: string,
   params: any
-): Promise<JupiterQuote | null> {
+): Promise<{ quote: JupiterQuote | null; noRoute: boolean }> {
   try {
     // Respect rate limit before making API call
     await respectRateLimit();
@@ -304,39 +315,47 @@ async function tryGetQuote(
         workingEndpoint = endpoint;
         logger.info(`✅ Found working Jupiter endpoint: ${endpoint}`);
       }
-      return response.data as JupiterQuote;
+      return { quote: response.data as JupiterQuote, noRoute: false };
     }
-    return null;
+    return { quote: null, noRoute: false };
   } catch (error: any) {
+    // Check if this is a "no route" error (not transient, don't retry)
+    let isNoRouteError = false;
+
     // Log detailed error info for debugging
     if (error.response) {
       const status = error.response.status;
       const statusText = error.response.statusText;
       const errorData = error.response.data;
 
-      logger.error(`❌ Jupiter API error from ${endpoint}:`);
-      logger.error(`   Status: ${status} ${statusText}`);
+      // Check for "COULD_NOT_FIND_ANY_ROUTE" error
+      if (status === 400 && errorData && errorData.errorCode === 'COULD_NOT_FIND_ANY_ROUTE') {
+        isNoRouteError = true;
+        logger.debug(`   No trading route available for this amount`);
+      } else {
+        // Log errors that aren't "no route" errors
+        logger.error(`❌ Jupiter API error from ${endpoint}:`);
+        logger.error(`   Status: ${status} ${statusText}`);
 
-      if (status === 401) {
-        logger.error(`   ⚠️  UNAUTHORIZED - API key is missing or invalid`);
-        logger.error(`   💡 Add your API key: http://localhost:3888/settings → Swap → Jupiter API Key`);
-        logger.error(`   💡 Get free key at: https://station.jup.ag/api-keys`);
-      } else if (status === 429) {
-        logger.warn(`   ⚠️  RATE LIMITED - Exceeded 1 request/second limit`);
-        logger.warn(`   💡 Bot has 2-min cache, this should rarely happen`);
-        if (workingEndpoint === endpoint) {
-          workingEndpoint = null;
+        if (status === 401) {
+          logger.error(`   ⚠️  UNAUTHORIZED - API key is missing or invalid`);
+          logger.error(`   💡 Add your API key: http://localhost:3888/settings → Swap → Jupiter API Key`);
+          logger.error(`   💡 Get free key at: https://station.jup.ag/api-keys`);
+        } else if (status === 429) {
+          logger.warn(`   ⚠️  RATE LIMITED - Exceeded 1 request/second limit`);
+          logger.warn(`   💡 Bot has 2-min cache, this should rarely happen`);
+          if (workingEndpoint === endpoint) {
+            workingEndpoint = null;
+          }
+        } else if (status === 404) {
+          logger.error(`   ⚠️  NOT FOUND - Wrong endpoint URL`);
+          logger.error(`   💡 Correct URL: https://api.jup.ag/swap/v1`);
+        } else if (status === 400) {
+          logger.error(`   ⚠️  BAD REQUEST - Check request parameters`);
+          if (errorData) {
+            logger.error(`   Response: ${JSON.stringify(errorData)}`);
+          }
         }
-      } else if (status === 404) {
-        logger.error(`   ⚠️  NOT FOUND - Wrong endpoint URL`);
-        logger.error(`   💡 Correct URL: https://api.jup.ag/swap/v1`);
-      }
-
-      if (errorData) {
-        logger.error(`   Response: ${JSON.stringify(errorData)}`);
-      } else if (status === 400) {
-        logger.error(`   ⚠️  BAD REQUEST - Check request parameters`);
-        logger.error(`   💡 Endpoint called: ${endpoint}/quote`);
       }
     } else {
       // Network or other error
@@ -344,7 +363,7 @@ async function tryGetQuote(
       logger.error(`❌ Jupiter API network error: ${errorMsg}`);
     }
 
-    return null;
+    return { quote: null, noRoute: isNoRouteError };
   }
 }
 
@@ -370,10 +389,10 @@ export async function getSwapQuote(
 
     // Try working endpoint first if we have one cached
     if (workingEndpoint) {
-      const quote = await tryGetQuote(workingEndpoint, params);
-      if (quote) {
-        logger.info(`Quote: ${inputAmount} ORB → ${Number(quote.outAmount) / 1e9} SOL (impact: ${quote.priceImpactPct}%)`);
-        return quote;
+      const result = await tryGetQuote(workingEndpoint, params);
+      if (result.quote) {
+        logger.info(`Quote: ${inputAmount} ORB → ${Number(result.quote.outAmount) / 1e9} SOL (impact: ${result.quote.priceImpactPct}%)`);
+        return result.quote;
       }
       // If cached endpoint fails, clear it
       logger.warn(`Cached endpoint ${workingEndpoint} failed, trying fallbacks...`);
@@ -381,10 +400,10 @@ export async function getSwapQuote(
     }
 
     // Try primary endpoint from config
-    const primaryQuote = await tryGetQuote(config.jupiterApiUrl, params);
-    if (primaryQuote) {
-      logger.info(`Quote: ${inputAmount} ORB → ${Number(primaryQuote.outAmount) / 1e9} SOL (impact: ${primaryQuote.priceImpactPct}%)`);
-      return primaryQuote;
+    const primaryResult = await tryGetQuote(config.jupiterApiUrl, params);
+    if (primaryResult.quote) {
+      logger.info(`Quote: ${inputAmount} ORB → ${Number(primaryResult.quote.outAmount) / 1e9} SOL (impact: ${primaryResult.quote.priceImpactPct}%)`);
+      return primaryResult.quote;
     }
 
     // Try fallback endpoints
@@ -393,12 +412,12 @@ export async function getSwapQuote(
       if (fallbackUrl === config.jupiterApiUrl) continue; // Skip if same as primary
 
       logger.debug(`Trying fallback: ${fallbackUrl}`);
-      const quote = await tryGetQuote(fallbackUrl, params);
-      if (quote) {
+      const result = await tryGetQuote(fallbackUrl, params);
+      if (result.quote) {
         logger.info(`✅ Fallback successful: ${fallbackUrl}`);
-        logger.info(`Quote: ${inputAmount} ORB → ${Number(quote.outAmount) / 1e9} SOL (impact: ${quote.priceImpactPct}%)`);
+        logger.info(`Quote: ${inputAmount} ORB → ${Number(result.quote.outAmount) / 1e9} SOL (impact: ${result.quote.priceImpactPct}%)`);
         logger.info(`💡 Consider updating .env: JUPITER_API_URL=${fallbackUrl}`);
-        return quote;
+        return result.quote;
       }
     }
 
