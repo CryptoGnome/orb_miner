@@ -18,12 +18,41 @@ const FALLBACK_ENDPOINTS = [
 
 let workingEndpoint: string | null = null;
 
+// Rate limiter: Jupiter free tier = 1 request per second
+let lastJupiterApiCall: number = 0;
+const JUPITER_RATE_LIMIT_MS = 1000; // 1 second between calls
+
+/**
+ * Rate limiter to ensure we respect Jupiter's 1 req/sec limit
+ * Waits if needed before allowing next API call
+ */
+async function respectRateLimit(): Promise<void> {
+  const now = Date.now();
+  const timeSinceLastCall = now - lastJupiterApiCall;
+
+  if (timeSinceLastCall < JUPITER_RATE_LIMIT_MS) {
+    const waitTime = JUPITER_RATE_LIMIT_MS - timeSinceLastCall;
+    logger.debug(`⏱️  Rate limit: waiting ${waitTime}ms before next Jupiter API call`);
+    await sleep(waitTime);
+  }
+
+  lastJupiterApiCall = Date.now();
+}
+
 // Get price of ORB in SOL by using quote endpoint
 // The lite-api doesn't have a /price endpoint, so we derive price from a small quote
 export async function getOrbPrice(): Promise<{ priceInSol: number; priceInUsd: number }> {
   // Check cache first
   const cached = getCachedOrbPrice();
   if (cached !== null) return cached;
+
+  // Validate API key is configured
+  if (!config.jupiterApiKey || config.jupiterApiKey.trim() === '') {
+    logger.error('❌ Jupiter API key is not configured!');
+    logger.error('💡 Add your API key at: http://localhost:3888/settings → Swap → Jupiter API Key');
+    logger.error('💡 Get free key at: https://station.jup.ag/api-keys (1 req/sec limit)');
+    return { priceInSol: 0, priceInUsd: 0 };
+  }
 
   try {
     // Use retry wrapper for robustness against temporary failures
@@ -222,6 +251,9 @@ async function tryGetQuote(
   params: any
 ): Promise<JupiterQuote | null> {
   try {
+    // Respect rate limit before making API call
+    await respectRateLimit();
+
     const quoteUrl = `${endpoint}/quote`;
 
     // Build headers with API key if available
@@ -251,18 +283,37 @@ async function tryGetQuote(
     }
     return null;
   } catch (error: any) {
-    // Log more detailed error info for debugging
-    const errorMsg = error.response?.status
-      ? `HTTP ${error.response.status}: ${error.response.statusText}`
-      : error.code || error.message;
-    logger.debug(`Endpoint ${endpoint} failed: ${errorMsg}`);
+    // Log detailed error info for debugging
+    if (error.response) {
+      const status = error.response.status;
+      const statusText = error.response.statusText;
+      const errorData = error.response.data;
 
-    // If we get rate limited (429), clear the cached working endpoint
-    if (error.response?.status === 429) {
-      logger.warn(`Rate limited by ${endpoint} - will try other endpoints`);
-      if (workingEndpoint === endpoint) {
-        workingEndpoint = null;
+      logger.error(`❌ Jupiter API error from ${endpoint}:`);
+      logger.error(`   Status: ${status} ${statusText}`);
+
+      if (status === 401) {
+        logger.error(`   ⚠️  UNAUTHORIZED - API key is missing or invalid`);
+        logger.error(`   💡 Add your API key: http://localhost:3888/settings → Swap → Jupiter API Key`);
+        logger.error(`   💡 Get free key at: https://station.jup.ag/api-keys`);
+      } else if (status === 429) {
+        logger.warn(`   ⚠️  RATE LIMITED - Exceeded 1 request/second limit`);
+        logger.warn(`   💡 Bot has 2-min cache, this should rarely happen`);
+        if (workingEndpoint === endpoint) {
+          workingEndpoint = null;
+        }
+      } else if (status === 404) {
+        logger.error(`   ⚠️  NOT FOUND - Wrong endpoint URL`);
+        logger.error(`   💡 Correct URL: https://api.jup.ag/swap/v1`);
       }
+
+      if (errorData) {
+        logger.debug(`   Response: ${JSON.stringify(errorData)}`);
+      }
+    } else {
+      // Network or other error
+      const errorMsg = error.code || error.message;
+      logger.error(`❌ Jupiter API network error: ${errorMsg}`);
     }
 
     return null;
