@@ -255,6 +255,7 @@ async function tryGetQuote(
     await respectRateLimit();
 
     const quoteUrl = `${endpoint}/quote`;
+    logger.info(`🔍 Calling Jupiter: ${quoteUrl}`);
 
     // Build headers with API key if available
     const headers: Record<string, string> = {
@@ -308,7 +309,10 @@ async function tryGetQuote(
       }
 
       if (errorData) {
-        logger.debug(`   Response: ${JSON.stringify(errorData)}`);
+        logger.error(`   Response: ${JSON.stringify(errorData)}`);
+      } else if (status === 400) {
+        logger.error(`   ⚠️  BAD REQUEST - Check request parameters`);
+        logger.error(`   💡 Endpoint called: ${endpoint}/quote`);
       }
     } else {
       // Network or other error
